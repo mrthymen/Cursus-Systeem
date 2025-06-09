@@ -3,6 +3,7 @@
  * Inventijn Admin Template System v4.1.0
  * Unified header, navigation, and data integration
  * Created: 2025-06-09
+ * Creator: Martijn en Claude
  */
 
 // Require config for database access
