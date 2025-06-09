@@ -268,7 +268,7 @@ if ($template_included && function_exists('renderAdminHeader')) {
     </head>
     <body>
         <div class="header">
-            <h1>Inventijn Certificate Management</h1>
+            <h1>Inventijn Certificate Management 1</h1>
             <div class="nav">
                 <a href="index.php">Dashboard</a>
                 <a href="planning.php">Planning</a>
