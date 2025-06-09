@@ -1,0 +1,69 @@
+{
+    "name": "inventijn/cursus-systeem",
+    "description": "Inventijn Deelnemersmanagement Systeem v2.2 - Professional course management system with official Inventijn PDF branding, security, watermarking and automation",
+    "version": "2.2.0",
+    "type": "project",
+    "keywords": ["course-management", "education", "php", "mysql", "security", "inventijn", "branding"],
+    "homepage": "https://inventijn.nl",
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Inventijn Development Team",
+            "email": "admin@inventijn.nl"
+        }
+    ],
+    "require": {
+        "php": ">=8.0",
+        "ext-pdo": "*",
+        "ext-json": "*",
+        "ext-gd": "*",
+        "ext-zip": "*",
+        "ext-curl": "*",
+        "phpmailer/phpmailer": "^6.8",
+        "tecnickcom/tcpdf": "^6.6",
+        "setasign/fpdi": "^2.3"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Inventijn\\": "includes/"
+        },
+        "files": [
+            "includes/config.php"
+        ]
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true,
+        "allow-plugins": {
+            "composer/package-versions-deprecated": true
+        }
+    },
+    "scripts": {
+        "post-install-cmd": [
+            "php -r \"copy('.env.example', '.env');\""
+        ],
+        "test": "phpunit tests/",
+        "install-db": "php includes/config.php install",
+        "cleanup": "php scripts/maintenance.php cleanup",
+        "backup": "php scripts/maintenance.php backup"
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "2.2-dev"
+        },
+        "inventijn": {
+            "branding": "official-pdf-colors",
+            "color-scheme": {
+                "light-pink": "#e3a1e5",
+                "purple": "#b998e4", 
+                "light-blue": "#6b80e8",
+                "dark-blue": "#3e5cc6"
+            },
+            "fonts": ["Space Grotesk", "Barlow"],
+            "version": "2.2.0"
+        }
+    }
+}
