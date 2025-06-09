@@ -3,7 +3,7 @@
  * Inventijn Certificate Management v4.1.2
  * SCHEMA-ADAPTIVE version - works with actual database structure
  * Strategy: Check what columns exist, adapt queries accordingly
- * Updated: 2025-06-09 
+ * Updated: 2025-06-09      
  */
 
 session_start();
