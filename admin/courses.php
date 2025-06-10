@@ -1,7 +1,7 @@
 <?php
 /**
- * Cursus Systeem - Course Management v6.0.9
- * Clean foundation - no integration complexity
+ * Cursus Systeem - Course Management v6.1.0
+ * Enhanced for smart booking flow with templates
  * Strategy: Make core functionality bulletproof first
  * Updated: 2025-06-10
  * Changes: 
@@ -18,6 +18,7 @@
  * v6.0.7 - COMPLETE OVERHAUL: Fixed ALL display sections, removed ALL English text remnants
  * v6.0.8 - FINAL FIX: Found and fixed the EXACT display line that was missed
  * v6.0.9 - FOUND THE REMNANT: Fixed the exact old display section user pointed out
+ * v6.1.0 - BOOKING FLOW: Added template support, smart enrollment, booking URLs
  */
 
 session_start();
@@ -63,8 +64,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                     $stmt = $pdo->prepare("
-                        INSERT INTO courses (name, description, course_date, time_range, max_participants, price, instructor_name, location, active, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+                        INSERT INTO courses (
+                            name, description, course_date, time_range, max_participants, price, 
+                            instructor_name, location, active, created_at, course_template, 
+                            category, subcategory, short_description, target_audience, 
+                            learning_goals, materials_included, booking_url, incompany_available
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ");
                     
                     $result = $stmt->execute([
@@ -75,7 +81,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         (int)$_POST['max_participants'],
                         (float)$_POST['price'],
                         trim($_POST['instructor']),
-                        trim($_POST['location'])
+                        trim($_POST['location']),
+                        $_POST['course_template'] ?? 'general',
+                        $_POST['category'] ?? 'general',
+                        $_POST['subcategory'] ?? '',
+                        trim($_POST['short_description'] ?? ''),
+                        trim($_POST['target_audience'] ?? ''),
+                        trim($_POST['learning_goals'] ?? ''),
+                        trim($_POST['materials_included'] ?? ''),
+                        $_POST['booking_url'] ?? '',
+                        isset($_POST['incompany_available']) ? 1 : 0
                     ]);
                     
                     if ($result) {
@@ -101,7 +116,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt = $pdo->prepare("
                         UPDATE courses SET
                             name = ?, description = ?, course_date = ?, time_range = ?,
-                            max_participants = ?, price = ?, instructor_name = ?, location = ?
+                            max_participants = ?, price = ?, instructor_name = ?, location = ?,
+                            course_template = ?, category = ?, subcategory = ?, 
+                            short_description = ?, target_audience = ?, learning_goals = ?, 
+                            materials_included = ?, booking_url = ?, incompany_available = ?
                         WHERE id = ?
                     ");
                     
@@ -114,6 +132,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         (float)$_POST['price'],
                         trim($_POST['instructor']),
                         trim($_POST['location']),
+                        $_POST['course_template'] ?? 'general',
+                        $_POST['category'] ?? 'general', 
+                        $_POST['subcategory'] ?? '',
+                        trim($_POST['short_description'] ?? ''),
+                        trim($_POST['target_audience'] ?? ''),
+                        trim($_POST['learning_goals'] ?? ''),
+                        trim($_POST['materials_included'] ?? ''),
+                        $_POST['booking_url'] ?? '',
+                        isset($_POST['incompany_available']) ? 1 : 0,
                         (int)$_POST['course_id']
                     ]);
                     
@@ -198,6 +225,14 @@ try {
     $_SESSION['message_type'] = 'error';
 }
 
+// Get course templates for dropdown
+try {
+    $templates_query = "SELECT * FROM course_templates WHERE active = 1 ORDER BY category, display_name";
+    $course_templates = $pdo->query($templates_query)->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    $course_templates = [];
+}
+
 // Handle edit mode
 $editing_course = null;
 if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
@@ -217,7 +252,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cursus Beheer - Cursus Systeem v6.0.9</title>
+    <title>Cursus Beheer - Cursus Systeem v6.1.0</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         /* Clean v6.0 Design System */
@@ -571,6 +606,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                 <?php endif; ?>
                 
                 <div class="form-grid">
+                    <!-- Basis cursus info -->
                     <div class="form-group">
                         <label for="course_name">Cursus Naam</label>
                         <input type="text" id="course_name" name="course_name" 
@@ -583,11 +619,81 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                                value="<?= htmlspecialchars($editing_course['instructor_name'] ?? '') ?>" required>
                     </div>
                     
-                    <div class="form-group full-width">
-                        <label for="course_description">Cursus Beschrijving</label>
-                        <textarea id="course_description" name="course_description" required><?= htmlspecialchars($editing_course['description'] ?? '') ?></textarea>
+                    <!-- Template selectie -->
+                    <div class="form-group">
+                        <label for="course_template">Cursus Template</label>
+                        <select id="course_template" name="course_template" onchange="fillTemplateData(this.value)">
+                            <option value="general" <?= ($editing_course['course_template'] ?? 'general') === 'general' ? 'selected' : '' ?>>Algemeen (Aangepast)</option>
+                            <?php foreach ($course_templates as $template): ?>
+                                <option value="<?= $template['template_key'] ?>" 
+                                        <?= ($editing_course['course_template'] ?? '') === $template['template_key'] ? 'selected' : '' ?>
+                                        data-category="<?= $template['category'] ?>"
+                                        data-subcategory="<?= $template['subcategory'] ?>"
+                                        data-description="<?= htmlspecialchars($template['default_description']) ?>"
+                                        data-target="<?= htmlspecialchars($template['default_target_audience']) ?>"
+                                        data-goals="<?= htmlspecialchars($template['default_learning_goals']) ?>"
+                                        data-materials="<?= htmlspecialchars($template['default_materials']) ?>"
+                                        data-duration="<?= $template['default_duration_hours'] ?>"
+                                        data-maxparticipants="<?= $template['default_max_participants'] ?>"
+                                        data-bookingurl="<?= $template['booking_form_url'] ?>">
+                                    <?= htmlspecialchars($template['display_name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small style="color: var(--neutral); font-size: 12px;">Kies een template om velden automatisch in te vullen</small>
                     </div>
                     
+                    <!-- Categorie en subcategorie -->
+                    <div class="form-group">
+                        <label for="category">Categorie</label>
+                        <select id="category" name="category">
+                            <option value="general" <?= ($editing_course['category'] ?? 'general') === 'general' ? 'selected' : '' ?>>Algemeen</option>
+                            <option value="ai-training" <?= ($editing_course['category'] ?? '') === 'ai-training' ? 'selected' : '' ?>>AI Training</option>
+                            <option value="horeca" <?= ($editing_course['category'] ?? '') === 'horeca' ? 'selected' : '' ?>>Horeca</option>
+                            <option value="marketing" <?= ($editing_course['category'] ?? '') === 'marketing' ? 'selected' : '' ?>>Marketing</option>
+                            <option value="management" <?= ($editing_course['category'] ?? '') === 'management' ? 'selected' : '' ?>>Management</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="subcategory">Subcategorie</label>
+                        <input type="text" id="subcategory" name="subcategory" 
+                               value="<?= htmlspecialchars($editing_course['subcategory'] ?? '') ?>"
+                               placeholder="bijv. introductie, verdieping">
+                    </div>
+                    
+                    <!-- Beschrijvingen -->
+                    <div class="form-group full-width">
+                        <label for="short_description">Korte Beschrijving</label>
+                        <textarea id="short_description" name="short_description" rows="2" 
+                                  placeholder="Een regel beschrijving voor in overzichten"><?= htmlspecialchars($editing_course['short_description'] ?? '') ?></textarea>
+                    </div>
+                    
+                    <div class="form-group full-width">
+                        <label for="course_description">Volledige Cursus Beschrijving</label>
+                        <textarea id="course_description" name="course_description" rows="4" required><?= htmlspecialchars($editing_course['description'] ?? '') ?></textarea>
+                    </div>
+                    
+                    <!-- Doelgroep en leerdoelen -->
+                    <div class="form-group full-width">
+                        <label for="target_audience">Doelgroep</label>
+                        <textarea id="target_audience" name="target_audience" rows="2" 
+                                  placeholder="Voor wie is deze cursus bedoeld?"><?= htmlspecialchars($editing_course['target_audience'] ?? '') ?></textarea>
+                    </div>
+                    
+                    <div class="form-group full-width">
+                        <label for="learning_goals">Leerdoelen</label>
+                        <textarea id="learning_goals" name="learning_goals" rows="3" 
+                                  placeholder="Wat leren deelnemers in deze cursus?"><?= htmlspecialchars($editing_course['learning_goals'] ?? '') ?></textarea>
+                    </div>
+                    
+                    <div class="form-group full-width">
+                        <label for="materials_included">Inbegrepen Materialen</label>
+                        <textarea id="materials_included" name="materials_included" rows="2" 
+                                  placeholder="Wat krijgen deelnemers mee?"><?= htmlspecialchars($editing_course['materials_included'] ?? '') ?></textarea>
+                    </div>
+                    
+                    <!-- Praktische details -->
                     <div class="form-group">
                         <label for="course_date">Datum</label>
                         <input type="date" id="course_date" name="course_date" 
@@ -618,6 +724,24 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                         <label for="location">Locatie</label>
                         <input type="text" id="location" name="location" 
                                value="<?= htmlspecialchars($editing_course['location'] ?? '') ?>" required>
+                    </div>
+                    
+                    <!-- Booking flow settings -->
+                    <div class="form-group full-width">
+                        <label for="booking_url">Booking Formulier URL</label>
+                        <input type="url" id="booking_url" name="booking_url" 
+                               value="<?= htmlspecialchars($editing_course['booking_url'] ?? '') ?>"
+                               placeholder="bijv. formulier-ai2.php?type=introductie">
+                        <small style="color: var(--neutral); font-size: 12px;">URL naar het inschrijfformulier voor deze cursus</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" name="incompany_available" value="1" 
+                                   <?= !empty($editing_course['incompany_available']) ? 'checked' : '' ?>>
+                            Incompany beschikbaar
+                        </label>
+                        <small style="color: var(--neutral); font-size: 12px;">Kan deze cursus ook incompany gegeven worden?</small>
                     </div>
                 </div>
                 
@@ -713,12 +837,133 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                             </span>
                         </div>
                         
-                        <!-- COURSE DESCRIPTION -->
+                        <!-- COURSE DESCRIPTION & DETAILS -->
                         <div style="margin-bottom: 1.5rem;">
+                            <?php if (!empty($course['short_description'])): ?>
+                                <p style="color: #555; line-height: 1.6; font-size: 15px; font-weight: 500; margin-bottom: 1rem;">
+                                    <?= nl2br(htmlspecialchars(trim($course['short_description']))) ?>
+                                </p>
+                            <?php endif; ?>
+                            
                             <p style="color: #555; line-height: 1.6; font-size: 15px;">
                                 <?= isset($course['description']) && !empty(trim($course['description'])) ? nl2br(htmlspecialchars(trim($course['description']))) : '<em>Geen beschrijving beschikbaar</em>' ?>
                             </p>
                         </div>
+                        
+                        <!-- COURSE DETAILS GRID -->
+                        <?php if (!empty($course['target_audience']) || !empty($course['learning_goals']) || !empty($course['materials_included'])): ?>
+                        <div style="background: #f8fafc; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                                <?php if (!empty($course['target_audience'])): ?>
+                                <div>
+                                    <h5 style="color: #1f2937; font-size: 14px; font-weight: 600; margin-bottom: 0.5rem;">🎯 Doelgroep</h5>
+                                    <p style="color: #6b7280; font-size: 14px; line-height: 1.4; margin: 0;"><?= nl2br(htmlspecialchars($course['target_audience'])) ?></p>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <?php if (!empty($course['learning_goals'])): ?>
+                                <div>
+                                    <h5 style="color: #1f2937; font-size: 14px; font-weight: 600; margin-bottom: 0.5rem;">🎓 Leerdoelen</h5>
+                                    <p style="color: #6b7280; font-size: 14px; line-height: 1.4; margin: 0;"><?= nl2br(htmlspecialchars($course['learning_goals'])) ?></p>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <?php if (!empty($course['materials_included'])): ?>
+                                <div>
+                                    <h5 style="color: #1f2937; font-size: 14px; font-weight: 600; margin-bottom: 0.5rem;">📦 Inbegrepen</h5>
+                                    <p style="color: #6b7280; font-size: 14px; line-height: 1.4; margin: 0;"><?= nl2br(htmlspecialchars($course['materials_included'])) ?></p>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <!-- BOOKING SECTION -->
+                        <?php 
+                        $available_spots = ($course['max_participants'] ?? 0) - ($course['participant_count'] ?? 0);
+                        $is_future_course = strtotime($course['course_date'] ?? 'now') > time();
+                        ?>
+                        
+                        <?php if ($is_future_course && $available_spots > 0): ?>
+                        <div style="background: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                                <div>
+                                    <h4 style="color: #065f46; margin: 0 0 0.5rem 0; font-size: 16px;">📅 Inschrijving Open</h4>
+                                    <p style="color: #047857; margin: 0; font-size: 14px;">
+                                        <strong><?= $available_spots ?> van <?= $course['max_participants'] ?> plaatsen beschikbaar</strong>
+                                    </p>
+                                </div>
+                                
+                                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                                    <?php if (!empty($course['booking_url'])): ?>
+                                        <a href="<?= htmlspecialchars($course['booking_url']) ?>" 
+                                           class="btn btn-success" 
+                                           style="text-decoration: none;">
+                                            <i class="fas fa-user-plus"></i> Inschrijven
+                                        </a>
+                                    <?php endif; ?>
+                                    
+                                    <?php if (!empty($course['incompany_available'])): ?>
+                                        <a href="<?= !empty($course['booking_url']) ? str_replace('?type=', '?type=incompany&base=', $course['booking_url']) : 'formulier-universal.php?type=incompany&course=' . $course['id'] ?>" 
+                                           class="btn btn-secondary" 
+                                           style="text-decoration: none;">
+                                            <i class="fas fa-building"></i> Incompany Aanvragen
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <?php elseif ($is_future_course && $available_spots <= 0): ?>
+                        <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                                <div>
+                                    <h4 style="color: #92400e; margin: 0 0 0.5rem 0; font-size: 16px;">⚠️ Cursus Vol</h4>
+                                    <p style="color: #b45309; margin: 0; font-size: 14px;">Alle plaatsen zijn bezet</p>
+                                </div>
+                                
+                                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                                    <a href="formulier-universal.php?type=interest&course=<?= $course['id'] ?>" 
+                                       class="btn btn-warning" 
+                                       style="text-decoration: none;">
+                                        <i class="fas fa-bell"></i> Wachtlijst
+                                    </a>
+                                    
+                                    <?php if (!empty($course['incompany_available'])): ?>
+                                        <a href="<?= !empty($course['booking_url']) ? str_replace('?type=', '?type=incompany&base=', $course['booking_url']) : 'formulier-universal.php?type=incompany&course=' . $course['id'] ?>" 
+                                           class="btn btn-secondary" 
+                                           style="text-decoration: none;">
+                                            <i class="fas fa-building"></i> Incompany Aanvragen
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <?php elseif (!$is_future_course): ?>
+                        <div style="background: #f3f4f6; border: 1px solid #9ca3af; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                                <div>
+                                    <h4 style="color: #6b7280; margin: 0 0 0.5rem 0; font-size: 16px;">📅 Cursus Afgerond</h4>
+                                    <p style="color: #6b7280; margin: 0; font-size: 14px;">Deze cursus heeft al plaatsgevonden</p>
+                                </div>
+                                
+                                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                                    <a href="formulier-universal.php?type=interest&course=<?= $course['id'] ?>" 
+                                       class="btn btn-secondary" 
+                                       style="text-decoration: none;">
+                                        <i class="fas fa-calendar-plus"></i> Interesse Volgende Editie
+                                    </a>
+                                    
+                                    <?php if (!empty($course['incompany_available'])): ?>
+                                        <a href="<?= !empty($course['booking_url']) ? str_replace('?type=', '?type=incompany&base=', $course['booking_url']) : 'formulier-universal.php?type=incompany&course=' . $course['id'] ?>" 
+                                           class="btn btn-secondary" 
+                                           style="text-decoration: none;">
+                                            <i class="fas fa-building"></i> Incompany Aanvragen
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                         
                         <!-- COURSE STATISTICS - DUTCH LABELS -->
                         <div class="course-meta">
@@ -822,5 +1067,141 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
             <?php endif; ?>
         </div>
     </div>
+    
+    <script>
+    // Template auto-fill functionality
+    function fillTemplateData(templateKey) {
+        if (templateKey === 'general') return;
+        
+        const option = document.querySelector(`option[value="${templateKey}"]`);
+        if (!option) return;
+        
+        // Auto-fill fields from template data
+        document.getElementById('category').value = option.dataset.category || '';
+        document.getElementById('subcategory').value = option.dataset.subcategory || '';
+        document.getElementById('course_description').value = option.dataset.description || '';
+        document.getElementById('short_description').value = option.dataset.description || '';
+        document.getElementById('target_audience').value = option.dataset.target || '';
+        document.getElementById('learning_goals').value = option.dataset.goals || '';
+        document.getElementById('materials_included').value = option.dataset.materials || '';
+        document.getElementById('max_participants').value = option.dataset.maxparticipants || '20';
+        document.getElementById('booking_url').value = option.dataset.bookingurl || '';
+        
+        // Show confirmation
+        const message = document.createElement('div');
+        message.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 1rem; border-radius: 8px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.15);';
+        message.innerHTML = '<i class="fas fa-check"></i> Template gegevens ingevuld!';
+        document.body.appendChild(message);
+        
+        setTimeout(() => message.remove(), 3000);
+    }
+    
+    // Enhanced form validation
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('.inschrijf-form');
+        if (!form) return;
+        
+        // Real-time booking URL validation
+        const bookingUrlField = document.getElementById('booking_url');
+        if (bookingUrlField) {
+            bookingUrlField.addEventListener('blur', function() {
+                const url = this.value.trim();
+                if (url && !url.includes('formulier-') && !url.includes('.php')) {
+                    this.style.borderColor = '#f59e0b';
+                    this.title = 'URL moet een formulier bestand zijn (bijv. formulier-ai2.php?type=intro)';
+                } else {
+                    this.style.borderColor = '';
+                    this.title = '';
+                }
+            });
+        }
+        
+        // Auto-generate booking URL based on template
+        const templateSelect = document.getElementById('course_template');
+        const courseNameField = document.getElementById('course_name');
+        
+        if (templateSelect && courseNameField) {
+            function generateBookingUrl() {
+                const template = templateSelect.value;
+                const courseName = courseNameField.value.toLowerCase();
+                
+                if (template === 'ai-booster-intro' || courseName.includes('introductie')) {
+                    document.getElementById('booking_url').value = 'formulier-ai2.php?type=introductie';
+                } else if (template === 'ai-booster-verdieping' || courseName.includes('verdieping')) {
+                    document.getElementById('booking_url').value = 'formulier-ai2.php?type=verdieping';
+                } else if (template === 'ai-booster-combi' || courseName.includes('combi') || courseName.includes('masterclass')) {
+                    document.getElementById('booking_url').value = 'formulier-ai2.php?type=combi';
+                } else if (template === 'ai-booster-incompany' || courseName.includes('incompany')) {
+                    document.getElementById('booking_url').value = 'formulier-ai2.php?type=incompany';
+                } else if (template.includes('horeca') || courseName.includes('kassa') || courseName.includes('iva')) {
+                    document.getElementById('booking_url').value = 'formulier-universal.php?type=' + template.replace('horeca-', '');
+                }
+            }
+            
+            templateSelect.addEventListener('change', generateBookingUrl);
+            courseNameField.addEventListener('blur', generateBookingUrl);
+        }
+    });
+    
+    // Enhanced admin actions
+    function markAsPaid(participantId) {
+        if (confirm('Markeer deze deelnemer als betaald?')) {
+            fetch('course-admin-actions.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'mark_paid', participant_id: participantId })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    location.reload();
+                } else {
+                    alert('Fout: ' + result.message);
+                }
+            });
+        }
+    }
+    
+    function resendInvoice(participantId) {
+        if (confirm('Factuur opnieuw verzenden?')) {
+            fetch('course-admin-actions.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'resend_invoice', participant_id: participantId })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    alert('Factuur verzonden!');
+                } else {
+                    alert('Fout: ' + result.message);
+                }
+            });
+        }
+    }
+    
+    function generateReceipt(participantId) {
+        window.open('generate-receipt.php?participant_id=' + participantId, '_blank');
+    }
+    
+    function updatePaymentStatus(participantId, status) {
+        fetch('course-admin-actions.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                action: 'update_payment_status', 
+                participant_id: participantId, 
+                status: status 
+            })
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (!result.success) {
+                alert('Fout bij bijwerken status: ' + result.message);
+                location.reload(); // Reset form
+            }
+        });
+    }
+    </script>
 </body>
 </html>
