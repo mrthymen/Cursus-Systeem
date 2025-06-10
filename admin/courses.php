@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Systeem - Course Management v6.0.2
+ * Cursus Systeem - Course Management v6.0.3
  * Clean foundation - no integration complexity
  * Strategy: Make core functionality bulletproof first
  * Updated: 2025-06-10
@@ -11,6 +11,7 @@
  * v6.0.1 - Proper error handling
  * v6.0.1 - Version tracking fixed
  * v6.0.2 - Fixed config.php path (../includes/config.php)
+ * v6.0.3 - CRITICAL: Fixed database column mapping (name not course_name, etc.)
  */
 
 session_start();
@@ -48,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'create_course':
                 try {
                     // Validate required fields
-                    $required = ['course_name', 'course_description', 'course_date', 'course_time', 'duration_hours', 'max_participants', 'price', 'instructor', 'location'];
+                    $required = ['course_name', 'course_description', 'course_date', 'course_time', 'max_participants', 'price', 'instructor', 'location'];
                     foreach ($required as $field) {
                         if (empty($_POST[$field])) {
                             throw new Exception("Field '$field' is required.");
@@ -56,8 +57,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                     $stmt = $pdo->prepare("
-                        INSERT INTO courses (course_name, course_description, course_date, course_time, duration_hours, max_participants, price, instructor, location, active, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+                        INSERT INTO courses (name, description, course_date, time_range, max_participants, price, instructor_name, location, active, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
                     ");
                     
                     $result = $stmt->execute([
@@ -65,7 +66,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         trim($_POST['course_description']),
                         $_POST['course_date'],
                         $_POST['course_time'],
-                        (int)$_POST['duration_hours'],
                         (int)$_POST['max_participants'],
                         (float)$_POST['price'],
                         trim($_POST['instructor']),
@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'update_course':
                 try {
                     // Validate required fields
-                    $required = ['course_id', 'course_name', 'course_description', 'course_date', 'course_time', 'duration_hours', 'max_participants', 'price', 'instructor', 'location'];
+                    $required = ['course_id', 'course_name', 'course_description', 'course_date', 'course_time', 'max_participants', 'price', 'instructor', 'location'];
                     foreach ($required as $field) {
                         if (empty($_POST[$field])) {
                             throw new Exception("Field '$field' is required.");
@@ -94,8 +94,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $stmt = $pdo->prepare("
                         UPDATE courses SET
-                            course_name = ?, course_description = ?, course_date = ?, course_time = ?,
-                            duration_hours = ?, max_participants = ?, price = ?, instructor = ?, location = ?
+                            name = ?, description = ?, course_date = ?, time_range = ?,
+                            max_participants = ?, price = ?, instructor_name = ?, location = ?
                         WHERE id = ?
                     ");
                     
@@ -104,7 +104,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         trim($_POST['course_description']),
                         $_POST['course_date'],
                         $_POST['course_time'],
-                        (int)$_POST['duration_hours'],
                         (int)$_POST['max_participants'],
                         (float)$_POST['price'],
                         trim($_POST['instructor']),
@@ -211,7 +210,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Course Management - Cursus Systeem v6.0.2</title>
+    <title>Course Management - Cursus Systeem v6.0.3</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         /* Clean v6.0 Design System */
@@ -563,36 +562,30 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                     <div class="form-group">
                         <label for="course_name">Course Name</label>
                         <input type="text" id="course_name" name="course_name" 
-                               value="<?= htmlspecialchars($editing_course['course_name'] ?? '') ?>" required>
+                               value="<?= htmlspecialchars($editing_course['name'] ?? '') ?>" required>
                     </div>
                     
                     <div class="form-group">
                         <label for="instructor">Instructor</label>
                         <input type="text" id="instructor" name="instructor" 
-                               value="<?= htmlspecialchars($editing_course['instructor'] ?? '') ?>" required>
+                               value="<?= htmlspecialchars($editing_course['instructor_name'] ?? '') ?>" required>
                     </div>
                     
                     <div class="form-group full-width">
                         <label for="course_description">Course Description</label>
-                        <textarea id="course_description" name="course_description" required><?= htmlspecialchars($editing_course['course_description'] ?? '') ?></textarea>
+                        <textarea id="course_description" name="course_description" required><?= htmlspecialchars($editing_course['description'] ?? '') ?></textarea>
                     </div>
                     
                     <div class="form-group">
                         <label for="course_date">Date</label>
                         <input type="date" id="course_date" name="course_date" 
-                               value="<?= $editing_course['course_date'] ?? '' ?>" required>
+                               value="<?= $editing_course['course_date'] ? date('Y-m-d', strtotime($editing_course['course_date'])) : '' ?>" required>
                     </div>
                     
                     <div class="form-group">
                         <label for="course_time">Time</label>
-                        <input type="time" id="course_time" name="course_time" 
-                               value="<?= $editing_course['course_time'] ?? '' ?>" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="duration_hours">Duration (hours)</label>
-                        <input type="number" id="duration_hours" name="duration_hours" min="1" max="24" 
-                               value="<?= $editing_course['duration_hours'] ?? '8' ?>" required>
+                        <input type="text" id="course_time" name="course_time" placeholder="e.g. 09:00 - 17:00"
+                               value="<?= htmlspecialchars($editing_course['time_range'] ?? '') ?>" required>
                     </div>
                     
                     <div class="form-group">
@@ -661,7 +654,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                         </div>
                         
                         <p style="margin-bottom: 1rem; color: #555;">
-                            <?= nl2br(htmlspecialchars($course['course_description'])) ?>
+                            <?= nl2br(htmlspecialchars($course['description'])) ?>
                         </p>
                         
                         <div class="course-meta">
