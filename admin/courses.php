@@ -1,15 +1,16 @@
 <?php
 /**
- * Cursus Systeem - Course Management v6.0.1
+ * Cursus Systeem - Course Management v6.0.2
  * Clean foundation - no integration complexity
  * Strategy: Make core functionality bulletproof first
  * Updated: 2025-06-10
  * Changes: 
- * - Simplified architecture (no template integration)
- * - Clean CSS (no conflicts)
- * - Verified database schema
- * - Proper error handling
- * - Version tracking fixed
+ * v6.0.1 - Simplified architecture (no template integration)
+ * v6.0.1 - Clean CSS (no conflicts)
+ * v6.0.1 - Verified database schema
+ * v6.0.1 - Proper error handling
+ * v6.0.1 - Version tracking fixed
+ * v6.0.2 - Fixed config.php path (../includes/config.php)
  */
 
 session_start();
@@ -21,10 +22,10 @@ if (!isset($_SESSION['admin_user'])) {
 }
 
 // Include config with error handling
-if (!file_exists('config.php')) {
-    die('Config file not found. Please ensure config.php exists.');
+if (!file_exists('../includes/config.php')) {
+    die('Config file not found. Please ensure config.php exists in includes/ directory.');
 }
-require_once 'config.php';
+require_once '../includes/config.php';
 
 // Get database connection
 try {
@@ -210,7 +211,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Course Management - Cursus Systeem v6.0.1</title>
+    <title>Course Management - Cursus Systeem v6.0.2</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         /* Clean v6.0 Design System */
