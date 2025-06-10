@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Systeem - Course Management v6.0.8
+ * Cursus Systeem - Course Management v6.0.9
  * Clean foundation - no integration complexity
  * Strategy: Make core functionality bulletproof first
  * Updated: 2025-06-10
@@ -17,6 +17,7 @@
  * v6.0.6 - FIXED: Display bug resolved, time logic cleaned up (course_date vs time_range)
  * v6.0.7 - COMPLETE OVERHAUL: Fixed ALL display sections, removed ALL English text remnants
  * v6.0.8 - FINAL FIX: Found and fixed the EXACT display line that was missed
+ * v6.0.9 - FOUND THE REMNANT: Fixed the exact old display section user pointed out
  */
 
 session_start();
@@ -216,7 +217,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cursus Beheer - Cursus Systeem v6.0.8</title>
+    <title>Cursus Beheer - Cursus Systeem v6.0.9</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         /* Clean v6.0 Design System */
@@ -649,20 +650,66 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
             <?php else: ?>
                 <?php foreach ($courses as $course): ?>
                     <div class="card course-item">
-                        <div class="course-header">
-                            <div>
-                                <h4 style="color: #1f2937; margin-bottom: 0.5rem;">
-                                    <?= htmlspecialchars($course['course_name']) ?>
-                                </h4>
-                                <p style="color: var(--neutral); font-size: 14px;">
-                                    <strong>Instructor:</strong> <?= htmlspecialchars($course['instructor']) ?> | 
-                                    <strong>Date:</strong> <?= date('d-m-Y', strtotime($course['course_date'])) ?> <?= date('H:i', strtotime($course['course_time'])) ?> | 
-                                    <strong>Duration:</strong> <?= $course['duration_hours'] ?>h | 
-                                    <strong>Location:</strong> <?= htmlspecialchars($course['location']) ?>
-                                </p>
-                            </div>
-                            <span class="course-status <?= $course['active'] ? '' : 'inactive' ?>">
-                                <?= $course['active'] ? 'Active' : 'Inactive' ?>
+                        <!-- 🎯 COURSE TITLE - LARGE AND PROMINENT -->
+                        <div style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e5e7eb;">
+                            <h2 style="color: #1f2937; margin: 0; font-size: 1.6rem; font-weight: 700; line-height: 1.3;">
+                                <?php 
+                                // Debug: Let's see what we're getting
+                                echo "<!-- DEBUG: name = '" . ($course['name'] ?? 'NULL') . "' -->";
+                                
+                                $course_name = isset($course['name']) ? trim($course['name']) : '';
+                                if (empty($course_name)) {
+                                    echo "⚠️ NAAMLOZE CURSUS (ID: " . ($course['id'] ?? 'unknown') . ")";
+                                } else {
+                                    echo htmlspecialchars($course_name);
+                                }
+                                ?>
+                            </h2>
+                        </div>
+                        
+                        <!-- 🇳🇱 COURSE INFO - DUTCH FORMAT -->
+                        <div style="margin-bottom: 1.5rem;">
+                            <p style="color: #6b7280; font-size: 14px; line-height: 1.5;">
+                                <?php
+                                // Calculate duration from time_range  
+                                $duration = 'Onbekend';
+                                if (!empty($course['time_range']) && preg_match('/(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})/', $course['time_range'], $matches)) {
+                                    $start_minutes = (int)$matches[1] * 60 + (int)$matches[2];
+                                    $end_minutes = (int)$matches[3] * 60 + (int)$matches[4];
+                                    $duration_minutes = $end_minutes - $start_minutes;
+                                    if ($duration_minutes > 0) {
+                                        $hours = floor($duration_minutes / 60);
+                                        $minutes = $duration_minutes % 60;
+                                        $duration = $minutes == 0 ? "$hours uur" : "$hours uur en $minutes min";
+                                    }
+                                }
+                                
+                                // Format Dutch date
+                                $dutch_date = 'Niet ingesteld';
+                                if (!empty($course['course_date'])) {
+                                    $months = [
+                                        1 => 'januari', 2 => 'februari', 3 => 'maart', 4 => 'april', 5 => 'mei', 6 => 'juni',
+                                        7 => 'juli', 8 => 'augustus', 9 => 'september', 10 => 'oktober', 11 => 'november', 12 => 'december'
+                                    ];
+                                    $timestamp = strtotime($course['course_date']);
+                                    $day = date('d', $timestamp);
+                                    $month = $months[(int)date('m', $timestamp)];
+                                    $year = date('Y', $timestamp);
+                                    $dutch_date = "$day $month $year";
+                                }
+                                ?>
+                                
+                                <strong>Trainer:</strong> <?= htmlspecialchars($course['instructor_name'] ?? 'Niet ingesteld') ?> | 
+                                <strong>Datum:</strong> <?= $dutch_date ?> | 
+                                <strong>Duur:</strong> <?= $duration ?> (<?= htmlspecialchars($course['time_range'] ?? 'Niet ingesteld') ?>) | 
+                                <strong>Locatie:</strong> <?= htmlspecialchars($course['location'] ?? 'Niet ingesteld') ?>
+                            </p>
+                        </div>
+                        
+                        <!-- STATUS BADGE -->
+                        <div style="margin-bottom: 1.5rem; text-align: right;">
+                            <span class="course-status <?= ($course['active'] ?? 0) ? '' : 'inactive' ?>">
+                                <?= ($course['active'] ?? 0) ? 'Actief' : 'Inactief' ?>
                             </span>
                         </div>
                         
