@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Systeem - Course Management v6.0.5
+ * Cursus Systeem - Course Management v6.0.6
  * Clean foundation - no integration complexity
  * Strategy: Make core functionality bulletproof first
  * Updated: 2025-06-10
@@ -14,6 +14,7 @@
  * v6.0.3 - CRITICAL: Fixed database column mapping (name not course_name, etc.)
  * v6.0.4 - UI fixes: course title visible, softer design, NL formatting, NL text
  * v6.0.5 - HOTFIX: Course title display, remove Duration:h, proper NL date format
+ * v6.0.6 - FIXED: Display bug resolved, time logic cleaned up (course_date vs time_range)
  */
 
 session_start();
@@ -188,11 +189,6 @@ try {
     
     $courses = $pdo->query($courses_query)->fetchAll(PDO::FETCH_ASSOC);
     
-    // DEBUG: Log first course to see what data we're getting
-    if (!empty($courses)) {
-        error_log("DEBUG - First course data: " . print_r($courses[0], true));
-    }
-    
 } catch (Exception $e) {
     $courses = [];
     $_SESSION['message'] = 'Fout bij laden cursussen: ' . $e->getMessage();
@@ -218,7 +214,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cursus Beheer - Cursus Systeem v6.0.5</title>
+    <title>Cursus Beheer - Cursus Systeem v6.0.6</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         /* Clean v6.0 Design System */
@@ -593,12 +589,14 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                         <label for="course_date">Datum</label>
                         <input type="date" id="course_date" name="course_date" 
                                value="<?= $editing_course['course_date'] ? date('Y-m-d', strtotime($editing_course['course_date'])) : '' ?>" required>
+                        <small style="color: var(--neutral); font-size: 12px;">De cursusdatum (tijd wordt apart ingesteld hierboven)</small>
                     </div>
                     
                     <div class="form-group">
-                        <label for="course_time">Tijdstip</label>
+                        <label for="course_time">Tijdstip (bijv. 09:00 - 17:00)</label>
                         <input type="text" id="course_time" name="course_time" placeholder="bijv. 09:00 - 17:00"
                                value="<?= htmlspecialchars($editing_course['time_range'] ?? '') ?>" required>
+                        <small style="color: var(--neutral); font-size: 12px;">Gebruik formaat zoals: 09:00 - 17:00 of 14:00 - 16:30</small>
                     </div>
                     
                     <div class="form-group">
@@ -635,19 +633,6 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
             </form>
         </div>
 
-        <!-- DEBUG INFO (remove after fixing) -->
-        <?php if (!empty($courses)): ?>
-            <div class="card" style="background: #fef3c7; border-left: 4px solid #f59e0b;">
-                <h4>🔍 DEBUG INFO (Tijdelijk)</h4>
-                <pre style="font-size: 12px; overflow: auto;">
-                    <?php 
-                    echo "Eerste cursus data:\n";
-                    print_r(array_slice($courses[0], 0, 10)); // Eerste 10 velden
-                    ?>
-                </pre>
-            </div>
-        <?php endif; ?>
-
         <!-- Courses List -->
         <div class="card">
             <div class="card-header">
@@ -679,8 +664,8 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                             </span>
                         </div>
                         
-                        <p style="margin-bottom: 1rem; color: #555;">
-                            <?= nl2br(htmlspecialchars($course['description'])) ?>
+                        <p style="margin-bottom: 1rem; color: #555; line-height: 1.6;">
+                            <?= isset($course['description']) && !empty(trim($course['description'])) ? nl2br(htmlspecialchars(trim($course['description']))) : '<em>Geen beschrijving beschikbaar</em>' ?>
                         </p>
                         
                         <div class="course-meta">
