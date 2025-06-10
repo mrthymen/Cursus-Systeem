@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Systeem - Course Management v6.0.7
+ * Cursus Systeem - Course Management v6.0.8
  * Clean foundation - no integration complexity
  * Strategy: Make core functionality bulletproof first
  * Updated: 2025-06-10
@@ -16,6 +16,7 @@
  * v6.0.5 - HOTFIX: Course title display, remove Duration:h, proper NL date format
  * v6.0.6 - FIXED: Display bug resolved, time logic cleaned up (course_date vs time_range)
  * v6.0.7 - COMPLETE OVERHAUL: Fixed ALL display sections, removed ALL English text remnants
+ * v6.0.8 - FINAL FIX: Found and fixed the EXACT display line that was missed
  */
 
 session_start();
@@ -215,7 +216,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cursus Beheer - Cursus Systeem v6.0.7</title>
+    <title>Cursus Beheer - Cursus Systeem v6.0.8</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         /* Clean v6.0 Design System */
