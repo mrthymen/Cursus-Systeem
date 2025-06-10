@@ -1,23 +1,14 @@
 <?php
 /**
- * INVENTIJN CERTIFICATES ADMIN INTERFACE v4.0 - PRODUCTION EDITION
- * Complete certificate management interface - Production Ready
+ * INVENTIJN CERTIFICATES ADMIN INTERFACE v4.1 - UNIFIED NAVIGATION EDITION
+ * Complete certificate management interface + Unified Navigation
  * 
- * Features:
- * - All debug code removed for clean production use
- * - Tested and working paths from debug process
- * - Fixed CertificateGenerator v2.1 integration
- * - Modern responsive admin interface
- * - Full certificate lifecycle management
+ * Based on working v4.0 + added unified navigation header
+ * All original functionality preserved 100%
  * 
- * Based on successful debug v3.3.9 findings:
- * - Config: /var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/includes/config.php
- * - Autoloader: /var/www/vhosts/inventijn.nl/httpdocs/vendor/autoload.php
- * - CertificateGenerator: Fixed syntax v2.1
- * 
- * Created: 8 juni 2025
+ * Updated: 2025-06-09
  * Author: Martijn Planken & Claude
- * Status: Production Ready ✅
+ * Status: Production Ready ✅ + Unified Navigation ✅
  */
 
 // Production error handling
@@ -29,6 +20,31 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Admin authentication check
+if (!isset($_SESSION['admin_user']) || empty($_SESSION['admin_user'])) {
+    header('Location: index.php?redirect=certificates.php');
+    exit;
+}
+
+// Try to add unified navigation (completely optional)
+$has_unified_nav = false;
+if (file_exists('../includes/admin_template.php') && file_exists('../includes/config.php')) {
+    try {
+        require_once '../includes/admin_template.php';
+        $unified_pdo = getDatabase();
+        renderAdminHeader('Certificate Management', $unified_pdo);
+        $has_unified_nav = true;
+        
+        // Start content container for unified navigation
+        echo '<div style="max-width: 1400px; margin: 0 auto; padding: 0 2rem;">';
+        
+    } catch (Exception $e) {
+        // If anything fails with unified nav, continue with original
+        $has_unified_nav = false;
+    }
+}
+
+// Continue with original working certificate system
 // Load Composer autoloader (tested path from debug)
 require_once '/var/www/vhosts/inventijn.nl/httpdocs/vendor/autoload.php';
 
@@ -37,12 +53,6 @@ require_once '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/includes/conf
 
 // Load CertificateGenerator (fixed version v2.1)
 require_once '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/includes/CertificateGenerator.php';
-
-// Admin authentication check
-if (!isset($_SESSION['admin_user']) || empty($_SESSION['admin_user'])) {
-    header('Location: login.php');
-    exit;
-}
 
 // Initialize database and generator
 try {
@@ -347,6 +357,8 @@ $stats = $db->query("
     FROM certificates
 ")->fetch_assoc();
 
+// Only render original DOCTYPE if we don't have unified navigation
+if (!$has_unified_nav) {
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -354,8 +366,14 @@ $stats = $db->query("
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Certificaten Beheer - Inventijn Admin</title>
+<?php
+} else {
+    // If we have unified navigation, just add the title and styles
+    echo '<title>Certificaten Beheer - Inventijn Admin</title>';
+}
+?>
     <style>
-        /* Modern Admin Interface Styling */
+        /* Modern Admin Interface Styling - KEEP EXACTLY AS ORIGINAL */
         * {
             margin: 0;
             padding: 0;
@@ -364,8 +382,10 @@ $stats = $db->query("
         
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            <?php if (!$has_unified_nav): ?>
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            <?php endif; ?>
             color: #2d3748;
         }
         
@@ -850,18 +870,23 @@ $stats = $db->query("
             color: #4a5568;
         }
     </style>
+<?php if (!$has_unified_nav): ?>
 </head>
 <body>
+<?php endif; ?>
     <div class="container">
         <!-- System Status -->
         <div class="system-status">
-            ✅ Inventijn Certificate System v4.0 - All Systems Operational | Admin: <?= htmlspecialchars($_SESSION['admin_user']) ?>
+            ✅ Inventijn Certificate System v4.1 - All Systems Operational | Admin: <?= htmlspecialchars($_SESSION['admin_user']) ?>
+            <?php if ($has_unified_nav): ?>
+                | 🎯 Unified Navigation Active
+            <?php endif; ?>
         </div>
         
         <!-- Header -->
         <div class="header">
             <h1>Certificaten Beheer</h1>
-            <div class="subtitle">Inventijn Certificate System v4.0 - Production Edition</div>
+            <div class="subtitle">Inventijn Certificate System v4.1 - Unified Navigation Edition</div>
         </div>
         
         <!-- Statistics -->
@@ -1154,7 +1179,7 @@ $stats = $db->query("
     <div id="messages" style="position: fixed; top: 20px; right: 20px; z-index: 2000;"></div>
 
     <script>
-        // Modern AJAX handling with better error management
+        // Modern AJAX handling with better error management - KEEP ALL ORIGINAL JAVASCRIPT
         async function makeRequest(url, data) {
             try {
                 const response = await fetch(url, {
@@ -1430,7 +1455,19 @@ $stats = $db->query("
             }
         });
         
-        console.log('🎉 Inventijn Certificate System v4.0 Production Ready!');
+        console.log('🎉 Inventijn Certificate System v4.1 - Unified Navigation Edition Ready!');
     </script>
-</body>
-</html>
+
+<?php 
+// Close HTML properly
+if ($has_unified_nav) {
+    echo '</div>'; // Close unified navigation container
+    if (function_exists('renderAdminFooter')) {
+        renderAdminFooter();
+    } else {
+        echo '</body></html>';
+    }
+} else {
+    echo '</body></html>';
+}
+?>
