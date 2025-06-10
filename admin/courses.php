@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Systeem - Course Management v6.0.3
+ * Cursus Systeem - Course Management v6.0.4
  * Clean foundation - no integration complexity
  * Strategy: Make core functionality bulletproof first
  * Updated: 2025-06-10
@@ -12,6 +12,7 @@
  * v6.0.1 - Version tracking fixed
  * v6.0.2 - Fixed config.php path (../includes/config.php)
  * v6.0.3 - CRITICAL: Fixed database column mapping (name not course_name, etc.)
+ * v6.0.4 - UI fixes: course title visible, softer design, NL formatting, NL text
  */
 
 session_start();
@@ -24,7 +25,7 @@ if (!isset($_SESSION['admin_user'])) {
 
 // Include config with error handling
 if (!file_exists('../includes/config.php')) {
-    die('Config file not found. Please ensure config.php exists in includes/ directory.');
+    die('Config bestand niet gevonden. Zorg ervoor dat config.php bestaat in includes/ directory.');
 }
 require_once '../includes/config.php';
 
@@ -35,11 +36,11 @@ try {
     // Test database connection and verify table structure
     $test_query = $pdo->query("SHOW TABLES LIKE 'courses'");
     if (!$test_query->fetch()) {
-        throw new Exception('Courses table does not exist. Please run database setup.');
+        throw new Exception('Cursus tabel bestaat niet. Voer database setup uit.');
     }
     
 } catch (Exception $e) {
-    die('Database connection failed: ' . $e->getMessage());
+    die('Database verbinding mislukt: ' . $e->getMessage());
 }
 
 // Handle form submissions
@@ -52,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $required = ['course_name', 'course_description', 'course_date', 'course_time', 'max_participants', 'price', 'instructor', 'location'];
                     foreach ($required as $field) {
                         if (empty($_POST[$field])) {
-                            throw new Exception("Field '$field' is required.");
+                            throw new Exception("Veld '$field' is verplicht.");
                         }
                     }
                     
@@ -73,11 +74,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                     
                     if ($result) {
-                        $_SESSION['message'] = 'Course created successfully!';
+                        $_SESSION['message'] = 'Cursus succesvol aangemaakt!';
                         $_SESSION['message_type'] = 'success';
                     }
                 } catch (Exception $e) {
-                    $_SESSION['message'] = 'Error creating course: ' . $e->getMessage();
+                    $_SESSION['message'] = 'Fout bij aanmaken cursus: ' . $e->getMessage();
                     $_SESSION['message_type'] = 'error';
                 }
                 break;
@@ -88,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $required = ['course_id', 'course_name', 'course_description', 'course_date', 'course_time', 'max_participants', 'price', 'instructor', 'location'];
                     foreach ($required as $field) {
                         if (empty($_POST[$field])) {
-                            throw new Exception("Field '$field' is required.");
+                            throw new Exception("Veld '$field' is verplicht.");
                         }
                     }
                     
@@ -112,11 +113,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                     
                     if ($result) {
-                        $_SESSION['message'] = 'Course updated successfully!';
+                        $_SESSION['message'] = 'Cursus succesvol bijgewerkt!';
                         $_SESSION['message_type'] = 'success';
                     }
                 } catch (Exception $e) {
-                    $_SESSION['message'] = 'Error updating course: ' . $e->getMessage();
+                    $_SESSION['message'] = 'Fout bij bijwerken cursus: ' . $e->getMessage();
                     $_SESSION['message_type'] = 'error';
                 }
                 break;
@@ -131,19 +132,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $count = $participant_count->fetchColumn();
                     
                     if ($count > 0) {
-                        $_SESSION['message'] = 'Cannot delete course with enrolled participants.';
+                        $_SESSION['message'] = 'Kan cursus met ingeschreven deelnemers niet verwijderen.';
                         $_SESSION['message_type'] = 'error';
                     } else {
                         $stmt = $pdo->prepare("DELETE FROM courses WHERE id = ?");
                         $result = $stmt->execute([$course_id]);
                         
                         if ($result) {
-                            $_SESSION['message'] = 'Course deleted successfully!';
+                            $_SESSION['message'] = 'Cursus succesvol verwijderd!';
                             $_SESSION['message_type'] = 'success';
                         }
                     }
                 } catch (Exception $e) {
-                    $_SESSION['message'] = 'Error deleting course: ' . $e->getMessage();
+                    $_SESSION['message'] = 'Fout bij verwijderen cursus: ' . $e->getMessage();
                     $_SESSION['message_type'] = 'error';
                 }
                 break;
@@ -154,11 +155,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $result = $stmt->execute([$_POST['payment_status'], (int)$_POST['participant_id']]);
                     
                     if ($result) {
-                        $_SESSION['message'] = 'Payment status updated!';
+                        $_SESSION['message'] = 'Betalingsstatus bijgewerkt!';
                         $_SESSION['message_type'] = 'success';
                     }
                 } catch (Exception $e) {
-                    $_SESSION['message'] = 'Error updating payment: ' . $e->getMessage();
+                    $_SESSION['message'] = 'Fout bij bijwerken betaling: ' . $e->getMessage();
                     $_SESSION['message_type'] = 'error';
                 }
                 break;
@@ -187,7 +188,7 @@ try {
     $courses = $pdo->query($courses_query)->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
     $courses = [];
-    $_SESSION['message'] = 'Error loading courses: ' . $e->getMessage();
+    $_SESSION['message'] = 'Fout bij laden cursussen: ' . $e->getMessage();
     $_SESSION['message_type'] = 'error';
 }
 
@@ -199,7 +200,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
         $stmt->execute([(int)$_GET['edit']]);
         $editing_course = $stmt->fetch(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
-        $_SESSION['message'] = 'Error loading course for editing: ' . $e->getMessage();
+        $_SESSION['message'] = 'Fout bij laden cursus voor bewerken: ' . $e->getMessage();
         $_SESSION['message_type'] = 'error';
     }
 }
@@ -210,7 +211,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Course Management - Cursus Systeem v6.0.3</title>
+    <title>Cursus Beheer - Cursus Systeem v6.0.4</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         /* Clean v6.0 Design System */
@@ -408,7 +409,12 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
 
         /* Course items */
         .course-item {
-            border-left: 4px solid var(--primary);
+            border-left: 3px solid #e5e7eb;
+            transition: border-color 0.2s;
+        }
+
+        .course-item:hover {
+            border-left-color: var(--primary);
         }
 
         .course-header {
@@ -528,13 +534,13 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1><i class="fas fa-graduation-cap"></i> Course Management</h1>
+            <h1><i class="fas fa-graduation-cap"></i> Cursus Beheer</h1>
             <div class="nav">
                 <a href="index.php"><i class="fas fa-dashboard"></i> Dashboard</a>
                 <a href="planning.php"><i class="fas fa-calendar"></i> Planning</a>
-                <a href="courses.php" class="active"><i class="fas fa-book"></i> Courses</a>
-                <a href="users.php"><i class="fas fa-users"></i> Users</a>
-                <a href="certificates.php"><i class="fas fa-certificate"></i> Certificates</a>
+                <a href="courses.php" class="active"><i class="fas fa-book"></i> Cursussen</a>
+                <a href="users.php"><i class="fas fa-users"></i> Gebruikers</a>
+                <a href="certificates.php"><i class="fas fa-certificate"></i> Certificaten</a>
             </div>
         </div>
 
@@ -549,7 +555,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
         <!-- Course Form -->
         <div class="card">
             <div class="card-header">
-                <h3><?= $editing_course ? 'Edit Course' : 'Create New Course' ?></h3>
+                <h3><?= $editing_course ? 'Cursus Bewerken' : 'Nieuwe Cursus Aanmaken' ?></h3>
             </div>
             
             <form method="POST">
@@ -560,48 +566,48 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                 
                 <div class="form-grid">
                     <div class="form-group">
-                        <label for="course_name">Course Name</label>
+                        <label for="course_name">Cursus Naam</label>
                         <input type="text" id="course_name" name="course_name" 
                                value="<?= htmlspecialchars($editing_course['name'] ?? '') ?>" required>
                     </div>
                     
                     <div class="form-group">
-                        <label for="instructor">Instructor</label>
+                        <label for="instructor">Instructeur</label>
                         <input type="text" id="instructor" name="instructor" 
                                value="<?= htmlspecialchars($editing_course['instructor_name'] ?? '') ?>" required>
                     </div>
                     
                     <div class="form-group full-width">
-                        <label for="course_description">Course Description</label>
+                        <label for="course_description">Cursus Beschrijving</label>
                         <textarea id="course_description" name="course_description" required><?= htmlspecialchars($editing_course['description'] ?? '') ?></textarea>
                     </div>
                     
                     <div class="form-group">
-                        <label for="course_date">Date</label>
+                        <label for="course_date">Datum</label>
                         <input type="date" id="course_date" name="course_date" 
                                value="<?= $editing_course['course_date'] ? date('Y-m-d', strtotime($editing_course['course_date'])) : '' ?>" required>
                     </div>
                     
                     <div class="form-group">
-                        <label for="course_time">Time</label>
-                        <input type="text" id="course_time" name="course_time" placeholder="e.g. 09:00 - 17:00"
+                        <label for="course_time">Tijdstip</label>
+                        <input type="text" id="course_time" name="course_time" placeholder="bijv. 09:00 - 17:00"
                                value="<?= htmlspecialchars($editing_course['time_range'] ?? '') ?>" required>
                     </div>
                     
                     <div class="form-group">
-                        <label for="max_participants">Max Participants</label>
+                        <label for="max_participants">Max Deelnemers</label>
                         <input type="number" id="max_participants" name="max_participants" min="1" 
                                value="<?= $editing_course['max_participants'] ?? '20' ?>" required>
                     </div>
                     
                     <div class="form-group">
-                        <label for="price">Price (€)</label>
+                        <label for="price">Prijs (€)</label>
                         <input type="number" id="price" name="price" step="0.01" min="0" 
                                value="<?= $editing_course['price'] ?? '' ?>" required>
                     </div>
                     
                     <div class="form-group">
-                        <label for="location">Location</label>
+                        <label for="location">Locatie</label>
                         <input type="text" id="location" name="location" 
                                value="<?= htmlspecialchars($editing_course['location'] ?? '') ?>" required>
                     </div>
@@ -610,12 +616,12 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                 <div class="btn-group">
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-save"></i>
-                        <?= $editing_course ? 'Update Course' : 'Create Course' ?>
+                        <?= $editing_course ? 'Cursus Bijwerken' : 'Cursus Aanmaken' ?>
                     </button>
                     
                     <?php if ($editing_course): ?>
                         <a href="courses.php" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> Cancel
+                            <i class="fas fa-times"></i> Annuleren
                         </a>
                     <?php endif; ?>
                 </div>
@@ -625,13 +631,13 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
         <!-- Courses List -->
         <div class="card">
             <div class="card-header">
-                <h3>All Courses (<?= count($courses) ?>)</h3>
+                <h3>Alle Cursussen (<?= count($courses) ?>)</h3>
             </div>
 
             <?php if (empty($courses)): ?>
                 <div style="text-align: center; padding: 3rem; color: var(--neutral);">
                     <i class="fas fa-book fa-3x" style="margin-bottom: 1rem; opacity: 0.3;"></i>
-                    <p>No courses created yet. Use the form above to create your first course.</p>
+                    <p>Nog geen cursussen aangemaakt. Gebruik het formulier hierboven om je eerste cursus aan te maken.</p>
                 </div>
             <?php else: ?>
                 <?php foreach ($courses as $course): ?>
@@ -659,30 +665,30 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                         
                         <div class="course-meta">
                             <div class="meta-item">
-                                <div class="meta-label">Participants</div>
+                                <div class="meta-label">Deelnemers</div>
                                 <div class="meta-value"><?= $course['participant_count'] ?>/<?= $course['max_participants'] ?></div>
                             </div>
                             <div class="meta-item">
-                                <div class="meta-label">Paid</div>
+                                <div class="meta-label">Betaald</div>
                                 <div class="meta-value" style="color: var(--success);"><?= $course['paid_participants'] ?></div>
                             </div>
                             <div class="meta-item">
-                                <div class="meta-label">Pending</div>
+                                <div class="meta-label">Wachtend</div>
                                 <div class="meta-value" style="color: var(--warning);"><?= $course['pending_participants'] ?></div>
                             </div>
                             <div class="meta-item">
-                                <div class="meta-label">Revenue</div>
-                                <div class="meta-value">€<?= number_format($course['course_revenue'], 2) ?></div>
+                                <div class="meta-label">Omzet</div>
+                                <div class="meta-value">€<?= number_format($course['course_revenue'], 2, ',', '.') ?></div>
                             </div>
                             <div class="meta-item">
-                                <div class="meta-label">Price</div>
-                                <div class="meta-value">€<?= number_format($course['price'], 2) ?></div>
+                                <div class="meta-label">Prijs</div>
+                                <div class="meta-value">€<?= number_format($course['price'], 2, ',', '.') ?></div>
                             </div>
                         </div>
                         
                         <?php if ($course['participant_count'] > 0): ?>
                             <div class="participants-section">
-                                <strong style="margin-bottom: 1rem; display: block;">Participants:</strong>
+                                <strong style="margin-bottom: 1rem; display: block;">Deelnemers:</strong>
                                 <?php
                                 try {
                                     $participants_query = "
@@ -707,16 +713,16 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                                             <input type="hidden" name="action" value="update_participant_payment">
                                             <input type="hidden" name="participant_id" value="<?= $participant['id'] ?>">
                                             <select name="payment_status" onchange="this.form.submit()" class="payment-select">
-                                                <option value="pending" <?= $participant['payment_status'] === 'pending' ? 'selected' : '' ?>>Pending</option>
-                                                <option value="paid" <?= $participant['payment_status'] === 'paid' ? 'selected' : '' ?>>Paid</option>
-                                                <option value="cancelled" <?= $participant['payment_status'] === 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
+                                                <option value="pending" <?= $participant['payment_status'] === 'pending' ? 'selected' : '' ?>>Wachtend</option>
+                                                <option value="paid" <?= $participant['payment_status'] === 'paid' ? 'selected' : '' ?>>Betaald</option>
+                                                <option value="cancelled" <?= $participant['payment_status'] === 'cancelled' ? 'selected' : '' ?>>Geannuleerd</option>
                                             </select>
                                         </form>
                                     </div>
                                 <?php
                                     endforeach;
                                 } catch (Exception $e) {
-                                    echo '<p style="color: var(--error);">Error loading participants: ' . $e->getMessage() . '</p>';
+                                    echo '<p style="color: var(--error);">Fout bij laden deelnemers: ' . $e->getMessage() . '</p>';
                                 }
                                 ?>
                             </div>
@@ -724,21 +730,21 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                         
                         <div class="btn-group">
                             <a href="courses.php?edit=<?= $course['id'] ?>" class="btn btn-primary">
-                                <i class="fas fa-edit"></i> Edit
+                                <i class="fas fa-edit"></i> Bewerken
                             </a>
                             
                             <?php if ($course['participant_count'] == 0): ?>
-                                <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this course?')">
+                                <form method="POST" style="display: inline;" onsubmit="return confirm('Weet je zeker dat je deze cursus wilt verwijderen?')">
                                     <input type="hidden" name="action" value="delete_course">
                                     <input type="hidden" name="course_id" value="<?= $course['id'] ?>">
                                     <button type="submit" class="btn btn-danger">
-                                        <i class="fas fa-trash"></i> Delete
+                                        <i class="fas fa-trash"></i> Verwijderen
                                     </button>
                                 </form>
                             <?php endif; ?>
                             
                             <a href="certificates.php?course_id=<?= $course['id'] ?>" class="btn btn-success">
-                                <i class="fas fa-certificate"></i> Certificates
+                                <i class="fas fa-certificate"></i> Certificaten
                             </a>
                         </div>
                     </div>
