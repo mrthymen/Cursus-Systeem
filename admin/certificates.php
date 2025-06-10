@@ -1,50 +1,5 @@
 <?php
 /**
- * Original Certificate Management + Unified Navigation
- * Strategy: Keep 100% original functionality, only add header
- * Updated: 2025-06-09
- */
-
-session_start();
-
-// Check admin authentication
-if (!isset($_SESSION['admin_user'])) {
-    header('Location: index.php?redirect=certificates.php');
-    exit;
-}
-
-// Try to add unified navigation (optional)
-$has_unified_nav = false;
-if (file_exists('../includes/admin_template.php')) {
-    try {
-        require_once '../includes/admin_template.php';
-        require_once '../includes/config.php';
-        
-        $pdo = getDatabase();
-        renderAdminHeader('Certificate Management', $pdo);
-        echo '<div style="max-width: 1400px; margin: 0 auto; padding: 0 2rem;">';
-        echo '<h2 style="color: #1e293b; margin-bottom: 1rem;">Certificate Management</h2>';
-        $has_unified_nav = true;
-        
-    } catch (Exception $e) {
-        $has_unified_nav = false;
-    }
-}
-
-// If unified nav failed, use simple header
-if (!$has_unified_nav) {
-    echo '<!DOCTYPE html>
-    <html lang="nl">
-    <head>
-        <meta charset="UTF-8">
-        <title>Certificate Management</title>
-    </head>
-    <body style="font-family: Arial, sans-serif; margin: 20px;">
-        <h1>Certificate Management</h1>
-        <p><a href="index.php">← Back to Dashboard</a></p>';
-}
-
-/**
  * INVENTIJN CERTIFICATE GENERATOR v2.1.1 - LOGO PATH FIXED
  * Premium PDF Certificate Generator - Fixed logo URL
  * 
@@ -1131,14 +1086,4 @@ class CertificateGenerator {
     }
 }
 
-if ($has_unified_nav) {
-    echo '</div>';
-    if (function_exists('renderAdminFooter')) {
-        renderAdminFooter();
-    } else {
-        echo '</body></html>';
-    }
-} else {
-    echo '</body></html>';
-}
 ?>
