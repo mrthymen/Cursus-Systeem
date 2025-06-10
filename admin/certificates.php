@@ -1,14 +1,17 @@
 <?php
 /**
- * INVENTIJN CERTIFICATES ADMIN INTERFACE v4.1 - UNIFIED NAVIGATION EDITION
- * Complete certificate management interface + Unified Navigation
+ * INVENTIJN CERTIFICATES ADMIN INTERFACE v4.1.1 - EMAIL FIX EDITION
+ * Complete certificate management interface + Unified Navigation + Email Fix
  * 
- * Based on working v4.0 + added unified navigation header
- * All original functionality preserved 100%
+ * Changes in v4.1.1:
+ * - Fixed email sending functionality
+ * - Simplified email method bypassing CertificateGenerator issues
+ * - Better email validation and error handling
+ * - All unified navigation functionality preserved
  * 
  * Updated: 2025-06-09
  * Author: Martijn Planken & Claude
- * Status: Production Ready ✅ + Unified Navigation ✅
+ * Status: Production Ready ✅ + Email Fixed ✅
  */
 
 // Production error handling
@@ -54,6 +57,115 @@ require_once '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/includes/conf
 // Load CertificateGenerator (fixed version v2.1)
 require_once '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/includes/CertificateGenerator.php';
 
+/**
+ * SIMPLIFIED EMAIL SENDING FUNCTION v4.1.1
+ * Bypasses complex CertificateGenerator email method
+ * Fixes "string did not match expected pattern" error
+ */
+function sendSimpleCertificateEmail($cert, $to_email, $pdf_path) {
+    try {
+        // Clean inputs
+        $to_email = filter_var(trim($to_email), FILTER_SANITIZE_EMAIL);
+        $participant_name = htmlspecialchars($cert['participant_name']);
+        $course_name = htmlspecialchars($cert['course_name']);
+        $cert_number = htmlspecialchars($cert['certificate_number']);
+        
+        // Email subject
+        $subject = "Uw Inventijn Certificaat - " . $course_name;
+        
+        // Simple HTML email content
+        $message = "
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='UTF-8'>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: #3e5cc6; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+                .content { background: white; padding: 20px; border: 1px solid #e2e8f0; }
+                .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 0.9em; color: #666; border-radius: 0 0 8px 8px; }
+                .details { background: #f7fafc; padding: 15px; border-radius: 6px; margin: 15px 0; }
+                .cert-number { color: #3e5cc6; font-weight: bold; }
+            </style>
+        </head>
+        <body>
+            <div class='container'>
+                <div class='header'>
+                    <h1>🎓 Gefeliciteerd!</h1>
+                    <p>Uw Inventijn Certificaat is bijgevoegd</p>
+                </div>
+                
+                <div class='content'>
+                    <p>Beste {$participant_name},</p>
+                    
+                    <p>Het was een genoegen u te verwelkomen in onze cursus. In de bijlage vindt u uw officiële certificaat.</p>
+                    
+                    <div class='details'>
+                        <h3>📋 Certificaat Details</h3>
+                        <p><strong>Cursus:</strong> {$course_name}</p>
+                        <p><strong>Certificaatnummer:</strong> <span class='cert-number'>{$cert_number}</span></p>
+                        <p><strong>Uitgegeven:</strong> " . date('d-m-Y') . "</p>
+                    </div>
+                    
+                    <p><strong>🚀 Wat nu?</strong></p>
+                    <ul>
+                        <li>Voeg het certificaat toe aan uw LinkedIn profiel</li>
+                        <li>Deel uw nieuwe vaardigheden met uw netwerk</li>
+                        <li>Bekijk onze andere cursussen voor verdere ontwikkeling</li>
+                    </ul>
+                    
+                    <p>Dank voor uw deelname en veel succes met het toepassen van uw nieuwe kennis!</p>
+                </div>
+                
+                <div class='footer'>
+                    <p><strong>Inventijn</strong> - Gedragsverandering door Inzicht</p>
+                    <p><a href='https://inventijn.nl' style='color: #3e5cc6;'>inventijn.nl</a> | Certificate System v4.1.1</p>
+                </div>
+            </div>
+        </body>
+        </html>";
+        
+        // Email headers
+        $boundary = md5(uniqid(time()));
+        
+        $headers = [
+            'MIME-Version: 1.0',
+            'Content-Type: multipart/mixed; boundary="' . $boundary . '"',
+            'From: Inventijn Certificaten <noreply@inventijn.nl>',
+            'Reply-To: info@inventijn.nl',
+            'X-Mailer: Inventijn Certificate System v4.1.1'
+        ];
+        
+        // Build email body
+        $email_body = "--{$boundary}\r\n";
+        $email_body .= "Content-Type: text/html; charset=UTF-8\r\n";
+        $email_body .= "Content-Transfer-Encoding: 7bit\r\n\r\n";
+        $email_body .= $message . "\r\n\r\n";
+        
+        // Attach PDF if it exists and is readable
+        if (file_exists($pdf_path) && is_readable($pdf_path)) {
+            $pdf_content = file_get_contents($pdf_path);
+            $pdf_name = basename($pdf_path);
+            
+            $email_body .= "--{$boundary}\r\n";
+            $email_body .= "Content-Type: application/pdf; name=\"{$pdf_name}\"\r\n";
+            $email_body .= "Content-Transfer-Encoding: base64\r\n";
+            $email_body .= "Content-Disposition: attachment; filename=\"{$pdf_name}\"\r\n\r\n";
+            $email_body .= chunk_split(base64_encode($pdf_content)) . "\r\n";
+        }
+        
+        $email_body .= "--{$boundary}--";
+        
+        // Send email
+        return mail($to_email, $subject, $email_body, implode("\r\n", $headers));
+        
+    } catch (Exception $e) {
+        error_log("Email sending failed: " . $e->getMessage());
+        return false;
+    }
+}
+
 // Initialize database and generator
 try {
     $db = getMySQLiDatabase();
@@ -78,11 +190,77 @@ if (isset($_POST['action'])) {
                 exit;
                 
             case 'send_certificate_email':
-                $cert_id = (int)$_POST['certificate_id'];
-                $email = $_POST['email'] ?? null;
-                
-                $result = $generator->sendCertificateByEmail($cert_id, $email);
-                echo json_encode($result);
+                try {
+                    $cert_id = (int)$_POST['certificate_id'];
+                    $email = $_POST['email'] ?? null;
+                    
+                    // Enhanced email validation
+                    if (empty($email)) {
+                        throw new Exception("Email address is required");
+                    }
+                    
+                    // Clean and validate email
+                    $email = trim($email);
+                    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        throw new Exception("Invalid email address format");
+                    }
+                    
+                    // Get certificate details first
+                    $stmt = $db->prepare("
+                        SELECT 
+                            c.id,
+                            c.certificate_number,
+                            c.pdf_filename,
+                            c.verification_token,
+                            u.name as participant_name,
+                            u.email as participant_email,
+                            course.name as course_name
+                        FROM certificates c
+                        JOIN course_participants cp ON c.course_participant_id = cp.id
+                        JOIN users u ON cp.user_id = u.id
+                        JOIN courses course ON c.course_id = course.id
+                        WHERE c.id = ?
+                    ");
+                    $stmt->bind_param('i', $cert_id);
+                    $stmt->execute();
+                    $cert = $stmt->get_result()->fetch_assoc();
+                    
+                    if (!$cert) {
+                        throw new Exception("Certificate not found");
+                    }
+                    
+                    // Check if PDF file exists
+                    $cert_dir = '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/certificates/';
+                    $filepath = $cert_dir . $cert['pdf_filename'];
+                    
+                    if (!file_exists($filepath)) {
+                        throw new Exception("Certificate PDF file not found");
+                    }
+                    
+                    // USE SIMPLIFIED EMAIL SENDING
+                    $success = sendSimpleCertificateEmail($cert, $email, $filepath);
+                    
+                    if ($success) {
+                        // Update certificate status
+                        $stmt = $db->prepare("UPDATE certificates SET status = 'sent', email_sent_at = NOW() WHERE id = ?");
+                        $stmt->bind_param('i', $cert_id);
+                        $stmt->execute();
+                        
+                        echo json_encode([
+                            'success' => true,
+                            'recipient' => $email,
+                            'message' => 'Email successfully sent'
+                        ]);
+                    } else {
+                        throw new Exception("Failed to send email - check server mail configuration");
+                    }
+                    
+                } catch (Exception $e) {
+                    echo json_encode([
+                        'success' => false,
+                        'error' => $e->getMessage()
+                    ]);
+                }
                 exit;
                 
             case 'bulk_generate':
@@ -877,16 +1055,16 @@ if (!$has_unified_nav) {
     <div class="container">
         <!-- System Status -->
         <div class="system-status">
-            ✅ Inventijn Certificate System v4.1 - All Systems Operational | Admin: <?= htmlspecialchars($_SESSION['admin_user']) ?>
+            ✅ Inventijn Certificate System v4.1.1 - All Systems Operational | Admin: <?= htmlspecialchars($_SESSION['admin_user']) ?>
             <?php if ($has_unified_nav): ?>
-                | 🎯 Unified Navigation Active
+                | 🎯 Unified Navigation Active | 📧 Email Fix Applied
             <?php endif; ?>
         </div>
         
         <!-- Header -->
         <div class="header">
             <h1>Certificaten Beheer</h1>
-            <div class="subtitle">Inventijn Certificate System v4.1 - Unified Navigation Edition</div>
+            <div class="subtitle">Inventijn Certificate System v4.1.1 - Email Fix Edition</div>
         </div>
         
         <!-- Statistics -->
@@ -1052,7 +1230,7 @@ if (!$has_unified_nav) {
                                 <?= $i ?>
                             </a>
                         <?php endif; ?>
-                    <?php endfor; ?>
+                    <?php endforeach; ?>
                 </div>
             <?php endif; ?>
         </div>
@@ -1179,7 +1357,7 @@ if (!$has_unified_nav) {
     <div id="messages" style="position: fixed; top: 20px; right: 20px; z-index: 2000;"></div>
 
     <script>
-        // Modern AJAX handling with better error management - KEEP ALL ORIGINAL JAVASCRIPT
+        // Modern AJAX handling with better error management
         async function makeRequest(url, data) {
             try {
                 const response = await fetch(url, {
@@ -1293,7 +1471,7 @@ if (!$has_unified_nav) {
             }
         });
         
-        // Send certificate email
+        // IMPROVED Send certificate email function v4.1.1
         async function sendCertificateEmail(certificateId, email) {
             try {
                 showMessage('📧 Email wordt verzonden...', 'info', 2000);
@@ -1303,6 +1481,8 @@ if (!$has_unified_nav) {
                 
                 if (result.success) {
                     showMessage(`✅ Certificaat verzonden naar ${result.recipient}`);
+                    // Refresh the page to update status
+                    setTimeout(() => location.reload(), 1500);
                 } else {
                     showMessage('❌ Fout bij verzenden email: ' + (result.error || 'Unknown error'), 'error');
                 }
@@ -1455,7 +1635,7 @@ if (!$has_unified_nav) {
             }
         });
         
-        console.log('🎉 Inventijn Certificate System v4.1 - Unified Navigation Edition Ready!');
+        console.log('🎉 Inventijn Certificate System v4.1.1 - Email Fix Edition Ready!');
     </script>
 
 <?php 
