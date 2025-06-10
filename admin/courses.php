@@ -435,7 +435,8 @@ function handleUpdateParticipantPayment($pdo) {
  * HELPER FUNCTIONS
  */
 function generateBookingUrl($template_key, $category) {
-    $base_url = 'universal_registration_form.php';
+    // Use relative path from admin directory to webroot
+    $base_url = '../universal_registration_form.php';
     
     // Map template keys to URL types
     $template_mapping = [
@@ -1346,10 +1347,10 @@ function getCourseById($pdo, $id) {
                             <div class="booking-section">
                                 <h5 style="color: #065f46; margin-bottom: 0.5rem;">🔗 Inschrijf URL</h5>
                                 <div class="booking-url">
-                                    <?= htmlspecialchars($course['booking_url'] ?: 'universal_registration_form.php?type=general&course=' . $course['id']) ?>
+                                    <?= htmlspecialchars($course['booking_url'] ?: '../universal_registration_form.php?type=general&course=' . $course['id']) ?>
                                 </div>
                                 <div style="margin-top: 0.5rem;">
-                                    <a href="<?= htmlspecialchars($course['booking_url'] ?: 'universal_registration_form.php?type=general&course=' . $course['id']) ?>" 
+                                    <a href="<?= htmlspecialchars($course['booking_url'] ?: '../universal_registration_form.php?type=general&course=' . $course['id']) ?>" 
                                        target="_blank" class="btn btn-success">
                                         <i class="fas fa-external-link-alt"></i> Test Inschrijfformulier
                                     </a>
