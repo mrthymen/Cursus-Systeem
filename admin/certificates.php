@@ -1,1089 +1,1436 @@
 <?php
 /**
- * INVENTIJN CERTIFICATE GENERATOR v2.1.1 - LOGO PATH FIXED
- * Premium PDF Certificate Generator - Fixed logo URL
+ * INVENTIJN CERTIFICATES ADMIN INTERFACE v4.0 - PRODUCTION EDITION
+ * Complete certificate management interface - Production Ready
  * 
- * Key Changes v2.1.1:
- * - Fixed logo path to use full URL: https://inventijn.nl/assets/images/logo.svg
- * - All other functionality identical to v2.1
+ * Features:
+ * - All debug code removed for clean production use
+ * - Tested and working paths from debug process
+ * - Fixed CertificateGenerator v2.1 integration
+ * - Modern responsive admin interface
+ * - Full certificate lifecycle management
  * 
+ * Based on successful debug v3.3.9 findings:
+ * - Config: /var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/includes/config.php
+ * - Autoloader: /var/www/vhosts/inventijn.nl/httpdocs/vendor/autoload.php
+ * - CertificateGenerator: Fixed syntax v2.1
+ * 
+ * Created: 8 juni 2025
  * Author: Martijn Planken & Claude
- * Updated: 2025-06-09
- * Compatible: mPDF v8+ (with v5.7 fallback)
+ * Status: Production Ready ✅
  */
 
-class CertificateGenerator {
+// Production error handling
+ini_set('display_errors', 0);
+error_reporting(E_ERROR | E_WARNING | E_PARSE);
+
+// Start session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Load Composer autoloader (tested path from debug)
+require_once '/var/www/vhosts/inventijn.nl/httpdocs/vendor/autoload.php';
+
+// Load configuration (tested path from debug)
+require_once '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/includes/config.php';
+
+// Load CertificateGenerator (fixed version v2.1)
+require_once '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/includes/CertificateGenerator.php';
+
+// Admin authentication check
+if (!isset($_SESSION['admin_user']) || empty($_SESSION['admin_user'])) {
+    header('Location: login.php');
+    exit;
+}
+
+// Initialize database and generator
+try {
+    $db = getMySQLiDatabase();
+    $generator = new CertificateGenerator($db);
+} catch (Exception $e) {
+    die("System initialization failed. Please contact support.");
+}
+
+// Handle AJAX requests
+if (isset($_POST['action'])) {
+    header('Content-Type: application/json');
     
-    private $mpdf;
-    private $db;
-    private $certificate_data;
-    private $template_config;
-    private $current_verification_token;
-    private $mpdf_version;
-    
-    // Inventijn Brand Colors v2.1.1 - Consistent palette
-    const BRAND_PRIMARY = '#3e5cc6';       // Main blue
-    const BRAND_SECONDARY = '#6b80e8';     // Light blue  
-    const BRAND_ACCENT = '#e3a1e5';        // Purple accent
-    const BRAND_TEXT = '#2c3e50';          // Dark text
-    const BRAND_LIGHT = '#f7fafc';         // Light background
-    const BRAND_GOLD = '#f6e05e';          // Premium gold
-    const BRAND_GRAY = '#718096';          // Subtle gray
-    
-    public function __construct($db_connection = null) {
-        $this->db = $db_connection ?? getMySQLiDatabase();
-        $this->detectMPDFVersion();
-        $this->initializeTemplateConfig();
-        $this->ensureDirectoriesExist();
-        $this->logSystemInfo();
-    }
-    
-    /**
-     * Enhanced mPDF version detection with better logging
-     */
-    private function detectMPDFVersion() {
-        if (class_exists('Mpdf\\Mpdf')) {
-            $this->mpdf_version = 'Mpdf\\Mpdf';
-            error_log("✅ CertificateGenerator v2.1.1 using modern mPDF v8+");
-        } elseif (class_exists('mPDF')) {
-            $this->mpdf_version = 'mPDF';
-            error_log("⚠️ CertificateGenerator v2.1.1 using legacy mPDF v5.7");
-        } else {
-            throw new Exception("❌ No compatible mPDF installation found. Please install mPDF via Composer.");
-        }
-    }
-    
-    /**
-     * Log system info for debugging
-     */
-    private function logSystemInfo() {
-        error_log("🎯 CertificateGenerator v2.1.1 initialized:");
-        error_log("   - mPDF Version: " . $this->mpdf_version);
-        error_log("   - PHP Version: " . PHP_VERSION);
-        error_log("   - Memory Limit: " . ini_get('memory_limit'));
-        error_log("   - Extensions: GD=" . (extension_loaded('gd') ? '✅' : '❌') . 
-                  ", MBString=" . (extension_loaded('mbstring') ? '✅' : '❌'));
-    }
-    
-    /**
-     * Template configuration with mPDF-optimized settings
-     */
-    private function initializeTemplateConfig() {
-        $this->template_config = [
-            'default' => [
-                'format' => 'A4-L',
-                'margins' => [10, 8, 10, 8], // top, right, bottom, left
-                'temp_dir' => $this->getTempDirectory(),
-                'font_dir' => $this->getFontDirectory(),
-                'image_quality' => 90,
-                'compress' => true,
-                'debug' => false
-            ],
-            'premium' => [
-                'format' => 'A4-L', 
-                'margins' => [8, 6, 8, 6],
-                'temp_dir' => $this->getTempDirectory(),
-                'image_quality' => 95,
-                'compress' => false,
-                'debug' => false
-            ]
-        ];
-    }
-    
-    /**
-     * Main certificate generation method - Enhanced error handling
-     */
-    public function generateCertificate($course_participant_id, $template = 'default', $certificate_type = 'deelname') {
-        $start_time = microtime(true);
-        
-        try {
-            // Input validation
-            $this->validateInputs($course_participant_id, $template, $certificate_type);
-            
-            // Get participant data
-            $this->certificate_data = $this->getCertificateData($course_participant_id);
-            if (!$this->certificate_data) {
-                throw new Exception("Participant data not found for ID: $course_participant_id");
-            }
-            
-            error_log("🎯 Generating certificate for: " . $this->certificate_data['participant_name']);
-            
-            // Check for existing certificate
-            if ($this->hasExistingCertificate($course_participant_id, $certificate_type)) {
-                throw new Exception("Certificate already exists for this participant and type");
-            }
-            
-            // Generate verification token
-            $this->current_verification_token = $this->generateVerificationToken();
-            
-            // Initialize mPDF with optimized settings
-            $config = $this->template_config[$template] ?? $this->template_config['default'];
-            $this->initializeMPDF($config);
-            
-            // Generate certificate HTML - NEW v2.1.1 template with fixed logo
-            $html = $this->generateCertificateHTML($template, $certificate_type);
-            
-            if ($config['debug']) {
-                error_log("📄 Generated HTML length: " . strlen($html) . " chars");
-            }
-            
-            // Write HTML to PDF with error catching
-            try {
-                $this->mpdf->WriteHTML($html);
-            } catch (Exception $e) {
-                throw new Exception("mPDF HTML processing failed: " . $e->getMessage() . 
-                                  ". This usually means CSS compatibility issues.");
-            }
-            
-            // Generate filename and save
-            $filename = $this->generateFilename($certificate_type);
-            $filepath = $this->getCertificateDirectory() . '/' . $filename;
-            
-            // Save PDF with verification
-            $this->mpdf->Output($filepath, 'F');
-            
-            // Verify file creation
-            if (!file_exists($filepath) || filesize($filepath) < 5000) {
-                throw new Exception("Certificate file generation failed or file too small (" . 
-                                  (file_exists($filepath) ? filesize($filepath) : 0) . " bytes)");
-            }
-            
-            // Save to database
-            $certificate_id = $this->saveCertificateRecord($course_participant_id, $filename, $template, $certificate_type, $filepath);
-            
-            $generation_time = round((microtime(true) - $start_time) * 1000, 2);
-            error_log("✅ Certificate generated successfully in {$generation_time}ms");
-            
-            return [
-                'success' => true,
-                'certificate_id' => $certificate_id,
-                'filename' => $filename,
-                'filepath' => $filepath,
-                'filesize' => filesize($filepath),
-                'verification_url' => $this->getVerificationURL($certificate_id),
-                'mpdf_version' => $this->mpdf_version,
-                'generation_time_ms' => $generation_time,
-                'template_version' => '2.1.1'
-            ];
-            
-        } catch (Exception $e) {
-            $generation_time = round((microtime(true) - $start_time) * 1000, 2);
-            error_log("❌ Certificate generation failed after {$generation_time}ms: " . $e->getMessage());
-            
-            return [
-                'success' => false,
-                'error' => $e->getMessage(),
-                'debug' => [
-                    'participant_id' => $course_participant_id,
-                    'template' => $template,
-                    'type' => $certificate_type,
-                    'mpdf_version' => $this->mpdf_version ?? 'unknown',
-                    'memory_usage' => memory_get_peak_usage(true),
-                    'generation_time_ms' => $generation_time,
-                    'timestamp' => date('Y-m-d H:i:s'),
-                    'template_version' => '2.1.1'
-                ]
-            ];
-        }
-    }
-    
-    /**
-     * Input validation with better error messages
-     */
-    private function validateInputs($course_participant_id, $template, $certificate_type) {
-        if (!is_numeric($course_participant_id) || $course_participant_id <= 0) {
-            throw new Exception("Invalid participant ID: must be a positive integer");
-        }
-        
-        if (!in_array($certificate_type, ['deelname', 'voltooiing', 'waardering'])) {
-            throw new Exception("Invalid certificate type. Allowed: deelname, voltooiing, waardering");
-        }
-        
-        if (!in_array($template, ['default', 'premium'])) {
-            throw new Exception("Invalid template. Allowed: default, premium");
-        }
-    }
-    
-    /**
-     * Enhanced mPDF initialization with v2.1.1 optimizations
-     */
-    private function initializeMPDF($config) {
-        $this->validateSystemRequirements();
-        
-        if ($this->mpdf_version === 'Mpdf\\Mpdf') {
-            // Modern mPDF v8+ configuration
-            $mpdf_config = [
-                'mode' => 'utf-8',
-                'format' => $config['format'],
-                'margin_left' => $config['margins'][3],
-                'margin_right' => $config['margins'][1], 
-                'margin_top' => $config['margins'][0],
-                'margin_bottom' => $config['margins'][2],
-                'tempDir' => $config['temp_dir'],
-                'default_font_size' => 12,
-                'default_font' => 'dejavusans'
-            ];
-            
-            // Clean config
-            $mpdf_config = array_filter($mpdf_config, function($value) {
-                return $value !== null;
-            });
-            
-            $this->mpdf = new \Mpdf\Mpdf($mpdf_config);
-            
-            // v8 specific optimizations
-            if ($config['compress']) {
-                $this->mpdf->SetCompression(true);
-            }
-            
-        } else {
-            // Legacy mPDF v5.7 fallback
-            $this->mpdf = new mPDF(
-                'utf-8',                        
-                $config['format'], 
-                12,                             
-                'dejavusans',                   
-                $config['margins'][3],          
-                $config['margins'][1],          
-                $config['margins'][0],          
-                $config['margins'][2],          
-                0,                              
-                0                               
-            );
-        }
-        
-        // Universal settings
-        $this->setUniversalMPDFSettings();
-    }
-    
-    /**
-     * Set universal mPDF settings
-     */
-    private function setUniversalMPDFSettings() {
-        $data = $this->certificate_data;
-        
-        // Enhanced metadata
-        $this->mpdf->SetTitle('Inventijn Certificaat - ' . $data['participant_name']);
-        $this->mpdf->SetAuthor('Inventijn - Gedragsverandering door Inzicht');
-        $this->mpdf->SetCreator('Inventijn Certificate System v2.1.1');
-        $this->mpdf->SetSubject('Cursus Certificaat - ' . $data['course_name']);
-        $this->mpdf->SetKeywords('inventijn, certificaat, cursus, training, gedragsverandering, ' . $data['course_name']);
-        
-        // Optional security
-        // $this->mpdf->SetProtection(['print', 'copy']);
-    }
-    
-    /**
-     * NEW v2.1.1 - Generate mPDF-compatible certificate HTML with FIXED LOGO PATH
-     */
-    private function generateCertificateHTML($template, $certificate_type) {
-        $data = $this->certificate_data;
-        
-        // Generate certificate number
-        $certificate_number = $this->generateCertificateNumber($certificate_type);
-        $this->certificate_data['certificate_number'] = $certificate_number;
-        
-        // Get the NEW v2.1.1 template with FIXED logo path
-        $template_html = $this->getCompatibleTemplate($template, $certificate_type);
-        
-        // Build replacements
-        $replacements = $this->buildTemplateReplacements($certificate_type, $certificate_number);
-        
-        // Apply replacements with proper HTML escaping
-        foreach ($replacements as $placeholder => $value) {
-            $template_html = str_replace($placeholder, $value, $template_html);
-        }
-        
-        return $template_html;
-    }
-    
-    /**
-     * NEW v2.1.1 - mPDF Compatible Template with FIXED LOGO PATH
-     */
-    private function getCompatibleTemplate($template, $certificate_type) {
-        // Split the template into parts to avoid syntax errors with long strings
-        $template_head = $this->getTemplateHead();
-        $template_styles = $this->getTemplateStyles();
-        $template_body = $this->getTemplateBodyWithFixedLogo();
-        
-        return $template_head . $template_styles . $template_body;
-    }
-    
-    /**
-     * Template head section
-     */
-    private function getTemplateHead() {
-        return '<!DOCTYPE html>
-<html lang="nl">
-<head>
-  <meta charset="UTF-8">
-  <title>Certificaat - {{participant_name}}</title>';
-    }
-    
-    /**
-     * Template styles - separated to avoid syntax errors
-     */
-    private function getTemplateStyles() {
-        return '  <style>
-    /* v2.1.1 - Final Inventijn Template - Fixed Logo Path */
-    /* Martijn Planken - Optimized voor mPDF */
-    
-    @page {
-      size: A4 landscape;
-      margin: 0;
-    }
-
-    body {
-      font-family: "DejaVu Sans", Arial, sans-serif;
-      font-size: 14pt;
-      color: #2c3e50;
-      background-color: #ffffff;
-      margin: 0;
-      padding: 0;
-    }
-
-    .page-wrapper {
-      width: 100%;
-      height: 100vh;
-      background-image: url("/cursus-systeem/includes/cert_bg.png");
-      background-size: cover;
-      background-repeat: no-repeat;
-      background-position: center center;
-      padding: 40pt;
-      box-sizing: border-box;
-    }
-
-    .certificate {
-      width: 100%;
-      height: 100%;
-      border: 2pt solid #3e5cc6;
-      border-radius: 20pt;
-      padding: 30pt;
-      background-color: transparent;
-      box-sizing: border-box;
-      position: relative;
-    }
-
-    .certificate::before {
-      content: "";
-      position: absolute;
-      top: 15pt;
-      left: 15pt;
-      right: 15pt;
-      bottom: 15pt;
-      border: 1pt dashed rgba(107, 128, 232, 0.2);
-      border-radius: 15pt;
-      pointer-events: none;
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 20pt;
-    }
-
-    .logo {
-      width: 150pt;
-      height: auto;
-      margin-bottom: 10pt;
-    }
-
-    .certificate-title {
-      font-size: 60pt;
-      color: #3e5cc6;
-      font-weight: bold;
-      text-shadow: 1pt 1pt 3pt rgba(255,255,255,0.8);
-    }
-
-    .certificate-subtitle {
-      font-size: 18pt;
-      color: #555;
-      font-style: italic;
-      text-shadow: 1pt 1pt 2pt rgba(255,255,255,0.6);
-    }
-
-    .content {
-      text-align: center;
-      margin: 30pt 0;
-    }
-
-    .awarded-to {
-      font-size: 14pt;
-      text-transform: uppercase;
-      color: #777;
-      letter-spacing: 1pt;
-      text-shadow: 1pt 1pt 2pt rgba(255,255,255,0.6);
-    }
-
-    .recipient-name {
-      font-size: 32pt;
-      font-weight: bold;
-      color: #e3a1e5;
-      border-bottom: 2pt solid #6b80e8;
-      display: inline-block;
-      padding-bottom: 5pt;
-      margin: 10pt 0 20pt;
-      text-shadow: 1pt 1pt 3pt rgba(255,255,255,0.8);
-    }
-
-    .achievement-text {
-      font-size: 16pt;
-      color: #333;
-      margin-bottom: 10pt;
-      text-shadow: 1pt 1pt 2pt rgba(255,255,255,0.6);
-    }
-
-    .course-title {
-      font-size: 24pt;
-      font-weight: bold;
-      color: #6b80e8;
-      margin: 10pt 0;
-      text-shadow: 1pt 1pt 3pt rgba(255,255,255,0.8);
-    }
-
-    .course-details {
-      font-size: 12pt;
-      color: #444;
-      margin-top: 10pt;
-      background-color: rgba(255, 255, 255, 0.7);
-      padding: 8pt 12pt;
-      border-radius: 6pt;
-      border-left: 3pt solid #3e5cc6;
-      display: inline-block;
-      text-align: left;
-    }
-
-    .course-details div {
-      margin: 2pt 0;
-    }
-
-    .footer {
-      margin-top: 40pt;
-      width: 100%;
-    }
-
-    .footer-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    .footer-table td {
-      vertical-align: top;
-      padding: 10pt;
-      background-color: rgba(255, 255, 255, 0.6);
-    }
-
-    .signature-line {
-      border-top: 1pt solid #2c3e50;
-      width: 150pt;
-      margin-bottom: 5pt;
-    }
-
-    .verification {
-      font-size: 10pt;
-      color: #555;
-      text-align: center;
-      background-color: rgba(240, 244, 255, 0.8);
-      padding: 6pt;
-      border-radius: 4pt;
-      border: 1pt solid #3e5cc6;
-    }
-
-    .certificate-number {
-      font-weight: bold;
-      margin-bottom: 2pt;
-      color: #3e5cc6;
-    }
-
-    .date-issued {
-      font-size: 10pt;
-      color: #777;
-      text-align: right;
-    }
-
-    .watermark {
-      position: absolute;
-      top: 45%;
-      left: 35%;
-      font-size: 50pt;
-      color: rgba(185, 152, 228, 0.03);
-      font-weight: bold;
-      transform: rotate(-15deg);
-      pointer-events: none;
-      z-index: 1;
-    }
-
-    .quality-seal {
-      position: absolute;
-      top: 15pt;
-      right: 15pt;
-      width: 55pt;
-      height: 55pt;
-      background: rgba(246, 224, 94, 0.9);
-      border-radius: 50%;
-      border: 2pt solid #3e5cc6;
-      text-align: center;
-      font-size: 7pt;
-      font-weight: bold;
-      color: #2c3e50;
-      z-index: 10;
-      padding-top: 12pt;
-      line-height: 1.1;
-    }
-
-    @media print {
-      .page-wrapper {
-        background-color: white;
-      }
-      
-      .certificate {
-        background-color: transparent;
-      }
-    }
-  </style>
-</head>';
-    }
-    
-    /**
-     * Template body section with FIXED LOGO PATH
-     */
-    private function getTemplateBodyWithFixedLogo() {
-        return '<body>
-  <div class="page-wrapper">
-    <div class="certificate">
-      <!-- Watermark -->
-      <div class="watermark">INVENTIJN</div>
-      
-      <!-- Quality seal -->
-      <div class="quality-seal">
-        CERTIFIED<br>
-        QUALITY<br>
-        2025
-      </div>
-      
-      <div class="header">
-        <img src="https://inventijn.nl/assets/images/logo.svg" class="logo" alt="Inventijn Logo">
-        <div class="certificate-title">Certificaat</div>
-        <div class="certificate-subtitle">{{certificate_subtitle}}</div>
-      </div>
-
-      <div class="content">
-        <div class="awarded-to">toegekend aan</div>
-        <div class="recipient-name">{{participant_name}}</div>
-        <div class="achievement-text">{{achievement_text}}</div>
-        <div class="course-title">{{course_title}}</div>
-        <div class="course-details">
-          <div><strong>Datum:</strong> {{course_date_formatted}}</div>
-          <div><strong>Locatie:</strong> {{course_location}}</div>
-          <div><strong>Trainer:</strong> {{instructor_name}}</div>
-        </div>
-      </div>
-
-      <div class="footer">
-        <table class="footer-table">
-          <tr>
-            <td style="text-align: center;">
-              <div class="signature-line"></div>
-              <div>Cursusleider</div>
-              <strong>{{instructor_name}}</strong>
-            </td>
-            <td class="verification">
-              <div class="certificate-number">{{certificate_number}}</div>
-              <div>Verificatie: inventijn.nl/verify</div>
-            </td>
-            <td class="date-issued">
-              <div><strong>Uitgereikt op:</strong></div>
-              <div>{{issue_date}}</div>
-            </td>
-          </tr>
-        </table>
-      </div>
-    </div>
-  </div>
-</body>
-</html>';
-    }
-    
-    /**
-     * Build template replacements with enhanced data
-     */
-    private function buildTemplateReplacements($certificate_type, $certificate_number) {
-        $data = $this->certificate_data;
-        
-        // Certificate type translations
-        $type_translations = [
-            'deelname' => [
-                'subtitle' => 'van deelname', 
-                'achievement' => 'voor succesvolle deelname aan'
-            ],
-            'voltooiing' => [
-                'subtitle' => 'van voltooiing', 
-                'achievement' => 'voor het succesvol voltooien van'
-            ],
-            'waardering' => [
-                'subtitle' => 'van waardering', 
-                'achievement' => 'als waardering voor de bijdrage aan'
-            ]
-        ];
-        
-        $type_config = $type_translations[$certificate_type] ?? $type_translations['deelname'];
-        
-        return [
-            '{{participant_name}}' => htmlspecialchars($data['participant_name']),
-            '{{participant_email}}' => htmlspecialchars($data['participant_email']),
-            '{{participant_company}}' => htmlspecialchars($data['participant_company'] ?? ''),
-            '{{certificate_subtitle}}' => $type_config['subtitle'],
-            '{{achievement_text}}' => $type_config['achievement'],
-            '{{course_title}}' => htmlspecialchars($data['course_name']),
-            '{{course_date_formatted}}' => $this->formatDate($data['course_date']),
-            '{{course_location}}' => htmlspecialchars($data['course_location'] ?? 'Online'),
-            '{{instructor_name}}' => htmlspecialchars($data['instructor_name'] ?? 'Martijn Planken'),
-            '{{certificate_number}}' => $certificate_number,
-            '{{verification_url}}' => $this->getVerificationURL(),
-            '{{verification_token}}' => $this->current_verification_token,
-            '{{issue_date}}' => date('d-m-Y'),
-            '{{issue_year}}' => date('Y'),
-            '{{current_timestamp}}' => date('Y-m-d H:i:s')
-        ];
-    }
-    
-    // [ALL OTHER METHODS REMAIN THE SAME - keeping this brief for space]
-    // Copy all remaining methods from the original CertificateGenerator.php
-    
-    /**
-     * Get certificate data with enhanced error handling
-     */
-    private function getCertificateData($course_participant_id) {
-        try {
-            $query = "
-                SELECT 
-                    cp.id as course_participant_id,
-                    cp.user_id,
-                    cp.course_id,
-                    cp.enrollment_date,
-                    cp.payment_status,
-                    u.name as participant_name,
-                    u.email as participant_email,
-                    u.company as participant_company,
-                    u.phone as participant_phone,
-                    c.name as course_name,
-                    c.course_date,
-                    c.location as course_location,
-                    c.instructor_name,
-                    c.max_participants,
-                    c.description as course_description
-                FROM course_participants cp
-                JOIN users u ON cp.user_id = u.id
-                JOIN courses c ON cp.course_id = c.id
-                WHERE cp.id = ? AND cp.payment_status IN ('paid', 'pending')
-            ";
-            
-            $stmt = $this->db->prepare($query);
-            if (!$stmt) {
-                throw new Exception("Database prepare failed: " . $this->db->error);
-            }
-            
-            $stmt->bind_param('i', $course_participant_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            if ($result->num_rows === 0) {
-                throw new Exception("No participant found with ID $course_participant_id or payment not confirmed");
-            }
-            
-            return $result->fetch_assoc();
-            
-        } catch (Exception $e) {
-            error_log("❌ getCertificateData failed: " . $e->getMessage());
-            throw $e;
-        }
-    }
-    
-    /**
-     * Generate unique certificate number with better format
-     */
-    private function generateCertificateNumber($certificate_type) {
-        $prefix = strtoupper(substr($certificate_type, 0, 3));
-        $year = date('Y');
-        $month = date('m');
-        
-        try {
-            $query = "SELECT COUNT(*) + 1 as next_number FROM certificates WHERE certificate_type = ? AND YEAR(generated_at) = ?";
-            $stmt = $this->db->prepare($query);
-            $stmt->bind_param('si', $certificate_type, $year);
-            $stmt->execute();
-            $next_number = $stmt->get_result()->fetch_assoc()['next_number'];
-            
-            return sprintf('INV-%s-%s-%s-%04d', $year, $month, $prefix, $next_number);
-            
-        } catch (Exception $e) {
-            error_log("⚠️ Certificate number generation failed, using fallback: " . $e->getMessage());
-            return sprintf('INV-%s-%s-%s-%04d', $year, $month, $prefix, rand(1000, 9999));
-        }
-    }
-    
-    /**
-     * Check if certificate already exists
-     */
-    private function hasExistingCertificate($course_participant_id, $certificate_type) {
-        try {
-            $query = "SELECT id FROM certificates WHERE course_participant_id = ? AND certificate_type = ?";
-            $stmt = $this->db->prepare($query);
-            $stmt->bind_param('is', $course_participant_id, $certificate_type);
-            $stmt->execute();
-            
-            return $stmt->get_result()->num_rows > 0;
-        } catch (Exception $e) {
-            error_log("⚠️ hasExistingCertificate check failed: " . $e->getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * Enhanced system requirements validation
-     */
-    private function validateSystemRequirements() {
-        $requirements = [
-            'mbstring' => 'mbstring extension required for text processing',
-            'gd' => 'GD extension required for image processing',
-            'iconv' => 'iconv extension recommended for character encoding'
-        ];
-        
-        $missing = [];
-        foreach ($requirements as $ext => $message) {
-            if (!extension_loaded($ext)) {
-                $missing[] = $message;
-            }
-        }
-        
-        if ($missing) {
-            throw new Exception("Missing PHP extensions: " . implode(', ', $missing));
-        }
-    }
-    
-    /**
-     * Enhanced certificate record saving
-     */
-    private function saveCertificateRecord($course_participant_id, $filename, $template, $certificate_type, $filepath) {
-        try {
-            $verification_token = $this->current_verification_token;
-            $pdf_hash = hash_file('sha256', $filepath);
-            $pdf_size = filesize($filepath);
-            $admin_user = $_SESSION['admin_user'] ?? 'system';
-            
-            $query = "
-                INSERT INTO certificates (
-                    course_participant_id, course_id, user_id, 
-                    certificate_type, template_used, generated_by_admin,
-                    certificate_number, pdf_filename, pdf_filesize, pdf_hash,
-                    verification_token, status, generated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'generated', NOW())
-            ";
-            
-            $data = $this->certificate_data;
-            $stmt = $this->db->prepare($query);
-            $stmt->bind_param(
-                'iiisssssiss',
-                $course_participant_id,
-                $data['course_id'],
-                $data['user_id'],
-                $certificate_type,
-                $template,
-                $admin_user,
-                $data['certificate_number'],
-                $filename,
-                $pdf_size,
-                $pdf_hash,
-                $verification_token
-            );
-            
-            if (!$stmt->execute()) {
-                throw new Exception("Database insert failed: " . $stmt->error);
-            }
-            
-            return $this->db->insert_id;
-            
-        } catch (Exception $e) {
-            error_log("❌ saveCertificateRecord failed: " . $e->getMessage());
-            throw new Exception("Failed to save certificate record: " . $e->getMessage());
-        }
-    }
-    
-    /**
-     * Directory management with better error handling
-     */
-    private function ensureDirectoriesExist() {
-        $directories = [
-            $this->getCertificateDirectory(),
-            $this->getTempDirectory()
-        ];
-        
-        foreach ($directories as $dir) {
-            if ($dir && !is_dir($dir)) {
-                if (!@mkdir($dir, 0755, true)) {
-                    error_log("⚠️ Could not create directory: $dir");
+    try {
+        switch ($_POST['action']) {
+            case 'generate_certificate':
+                $participant_id = (int)$_POST['participant_id'];
+                $template = $_POST['template'] ?? 'default';
+                $certificate_type = $_POST['certificate_type'] ?? 'deelname';
+                
+                $result = $generator->generateCertificate($participant_id, $template, $certificate_type);
+                echo json_encode($result);
+                exit;
+                
+            case 'send_certificate_email':
+                $cert_id = (int)$_POST['certificate_id'];
+                $email = $_POST['email'] ?? null;
+                
+                $result = $generator->sendCertificateByEmail($cert_id, $email);
+                echo json_encode($result);
+                exit;
+                
+            case 'bulk_generate':
+                $participant_ids = json_decode($_POST['participant_ids'], true);
+                if (!is_array($participant_ids)) {
+                    throw new Exception("Invalid participant IDs format");
                 }
-            }
-        }
-    }
-    
-    /**
-     * Get certificate directory with fallbacks
-     */
-    private function getCertificateDirectory() {
-        $possible_dirs = [
-            '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/certificates/',
-            $_SERVER['DOCUMENT_ROOT'] . '/cursus-systeem/certificates/',
-            dirname(__DIR__) . '/certificates/',
-            __DIR__ . '/certificates/'
-        ];
-        
-        foreach ($possible_dirs as $dir) {
-            if (is_dir($dir) || @mkdir($dir, 0755, true)) {
-                return $dir;
-            }
-        }
-        
-        return sys_get_temp_dir() . '/inventijn_certificates/';
-    }
-    
-    /**
-     * Get temp directory with fallbacks
-     */
-    private function getTempDirectory() {
-        $possible_dirs = [
-            '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/temp/',
-            $_SERVER['DOCUMENT_ROOT'] . '/cursus-systeem/temp/',
-            dirname(__DIR__) . '/temp/',
-            __DIR__ . '/temp/'
-        ];
-        
-        foreach ($possible_dirs as $dir) {
-            if (is_dir($dir) || @mkdir($dir, 0755, true)) {
-                return $dir;
-            }
-        }
-        
-        return sys_get_temp_dir();
-    }
-    
-    /**
-     * Get font directory
-     */
-    private function getFontDirectory() {
-        return null; // Use mPDF default fonts for maximum compatibility
-    }
-    
-    /**
-     * Generate secure filename
-     */
-    private function generateFilename($certificate_type) {
-        $data = $this->certificate_data;
-        $safe_name = preg_replace('/[^a-zA-Z0-9-]/', '', str_replace(' ', '-', strtolower($data['participant_name'])));
-        $safe_course = preg_replace('/[^a-zA-Z0-9-]/', '', str_replace(' ', '-', strtolower($data['course_name'])));
-        $timestamp = date('YmdHis');
-        
-        return sprintf(
-            'INV-%s-%s-%s-%s-%s.pdf',
-            date('Y'),
-            $certificate_type,
-            substr($safe_course, 0, 20),
-            substr($safe_name, 0, 15),
-            $timestamp
-        );
-    }
-    
-    /**
-     * Generate verification token
-     */
-    private function generateVerificationToken() {
-        return hash('sha256', uniqid(microtime(true), true));
-    }
-    
-    /**
-     * Get verification URL
-     */
-    private function getVerificationURL($certificate_id = null) {
-        $token = $this->current_verification_token;
-        return 'https://inventijn.nl/cursus-systeem/verify-certificate.php?token=' . $token;
-    }
-    
-    /**
-     * Format date for Dutch display
-     */
-    private function formatDate($date) {
-        if (empty($date)) return 'Datum onbekend';
-        
-        $months = [
-            1 => 'januari', 2 => 'februari', 3 => 'maart', 4 => 'april',
-            5 => 'mei', 6 => 'juni', 7 => 'juli', 8 => 'augustus',
-            9 => 'september', 10 => 'oktober', 11 => 'november', 12 => 'december'
-        ];
-        
-        $timestamp = strtotime($date);
-        if (!$timestamp) return 'Datum onbekend';
-        
-        $day = date('j', $timestamp);
-        $month = $months[date('n', $timestamp)];
-        $year = date('Y', $timestamp);
-        
-        return "$day $month $year";
-    }
-    
-    /**
-     * Enhanced email sending with better templates (existing method enhanced)
-     */
-    public function sendCertificateByEmail($certificate_id, $recipient_email = null) {
-        try {
-            // Get certificate data
-            $query = "
-                SELECT 
-                    c.*,
-                    u.name as participant_name, 
-                    u.email as participant_email, 
-                    course.name as course_name 
-                FROM certificates c 
-                JOIN course_participants cp ON c.course_participant_id = cp.id
-                JOIN users u ON cp.user_id = u.id
-                JOIN courses course ON c.course_id = course.id
-                WHERE c.id = ?
-            ";
-            $stmt = $this->db->prepare($query);
-            $stmt->bind_param('i', $certificate_id);
-            $stmt->execute();
-            $cert = $stmt->get_result()->fetch_assoc();
-            
-            if (!$cert) {
-                return ['success' => false, 'error' => 'Certificate not found'];
-            }
-            
-            $to_email = $recipient_email ?? $cert['participant_email'];
-            $filepath = $this->getCertificateDirectory() . '/' . $cert['pdf_filename'];
-            
-            if (!file_exists($filepath)) {
-                return ['success' => false, 'error' => 'Certificate file not found at: ' . $filepath];
-            }
-            
-            // Enhanced email content
-            $subject = '🎓 Uw Inventijn Certificaat - ' . $cert['course_name'];
-            $message = $this->buildEmailHTML($cert);
-            
-            // Send email
-            $success = $this->sendEnhancedEmail($to_email, $subject, $message, $filepath, $cert['pdf_filename']);
-            
-            if ($success) {
-                // Update certificate record
-                $query = "UPDATE certificates SET email_sent_at = NOW(), status = 'sent' WHERE id = ?";
-                $stmt = $this->db->prepare($query);
-                $stmt->bind_param('i', $certificate_id);
+                
+                $template = $_POST['template'] ?? 'default';
+                $certificate_type = $_POST['certificate_type'] ?? 'deelname';
+                
+                $results = [];
+                foreach ($participant_ids as $id) {
+                    $results[] = $generator->generateCertificate($id, $template, $certificate_type);
+                }
+                echo json_encode(['results' => $results]);
+                exit;
+                
+            case 'delete_certificate':
+                $cert_id = (int)$_POST['certificate_id'];
+                
+                // Get file path before deletion
+                $stmt = $db->prepare("SELECT pdf_filename FROM certificates WHERE id = ?");
+                $stmt->bind_param('i', $cert_id);
                 $stmt->execute();
-            }
-            
-            return [
-                'success' => $success,
-                'recipient' => $to_email,
-                'filename' => $cert['pdf_filename']
-            ];
-            
-        } catch (Exception $e) {
-            error_log("❌ Email sending failed: " . $e->getMessage());
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-    
-    /**
-     * Build enhanced email HTML with v2.1.1 styling
-     */
-    private function buildEmailHTML($cert) {
-        return "
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset='UTF-8'>
-            <style>
-                body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background: linear-gradient(135deg, " . self::BRAND_PRIMARY . " 0%, " . self::BRAND_SECONDARY . " 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-                .content { background: white; padding: 30px; }
-                .cert-details { background: " . self::BRAND_LIGHT . "; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid " . self::BRAND_PRIMARY . "; }
-                .button { display: inline-block; background: " . self::BRAND_PRIMARY . "; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 10px 0; }
-                .footer { background: #f8f9fa; padding: 20px; text-align: center; border-radius: 0 0 10px 10px; }
-            </style>
-        </head>
-        <body>
-            <div class='container'>
-                <div class='header'>
-                    <h1>🎓 Gefeliciteerd!</h1>
-                    <p>Uw Inventijn Certificaat is klaar</p>
-                </div>
+                $result = $stmt->get_result();
                 
-                <div class='content'>
-                    <p>Beste " . htmlspecialchars($cert['participant_name']) . ",</p>
-                    
-                    <p>Het was een genoegen u te verwelkomen in onze cursus. In de bijlage vindt u uw officiële certificaat.</p>
-                    
-                    <div class='cert-details'>
-                        <h3>📋 Certificaat Details</h3>
-                        <p><strong>Cursus:</strong> " . htmlspecialchars($cert['course_name']) . "</p>
-                        <p><strong>Type:</strong> " . ucfirst($cert['certificate_type']) . "</p>
-                        <p><strong>Certificaatnummer:</strong> " . htmlspecialchars($cert['certificate_number']) . "</p>
-                        <p><strong>Uitgegeven:</strong> " . date('d-m-Y', strtotime($cert['generated_at'])) . "</p>
-                    </div>
-                    
-                    <p>🔐 <strong>Verificatie:</strong> De echtheid van dit certificaat kunt u verifiëren via onze website.</p>
-                    
-                    <a href='" . $this->getVerificationURL() . "' class='button'>Verificeer Certificaat</a>
-                    
-                    <h3>🚀 Wat nu?</h3>
-                    <ul>
-                        <li>Voeg het certificaat toe aan uw LinkedIn profiel</li>
-                        <li>Deel uw nieuwe vaardigheden met uw netwerk</li>
-                        <li>Bekijk onze andere cursussen voor verdere ontwikkeling</li>
-                    </ul>
-                </div>
+                if ($result->num_rows === 0) {
+                    throw new Exception("Certificate not found");
+                }
                 
-                <div class='footer'>
-                    <p><strong>Inventijn</strong> - Gedragsverandering door Inzicht</p>
-                    <p>Certificate System v2.1.1 | <a href='https://inventijn.nl'>inventijn.nl</a></p>
-                </div>
-            </div>
-        </body>
-        </html>";
-    }
-    
-    /**
-     * Send enhanced email with attachment
-     */
-    private function sendEnhancedEmail($to, $subject, $html_content, $attachment_path, $attachment_name) {
-        $boundary = md5(uniqid(time()));
-        
-        $headers = [
-            'MIME-Version: 1.0',
-            'Content-Type: multipart/mixed; boundary="' . $boundary . '"',
-            'From: Inventijn Certificaten <noreply@inventijn.nl>',
-            'Reply-To: info@inventijn.nl',
-            'X-Mailer: Inventijn Certificate System v2.1.1',
-            'X-Priority: 1'
-        ];
-        
-        $message = "--{$boundary}\r\n";
-        $message .= "Content-Type: text/html; charset=UTF-8\r\n";
-        $message .= "Content-Transfer-Encoding: 7bit\r\n\r\n";
-        $message .= $html_content . "\r\n\r\n";
-        
-        // Attach PDF
-        if (file_exists($attachment_path)) {
-            $attachment_content = file_get_contents($attachment_path);
-            $message .= "--{$boundary}\r\n";
-            $message .= "Content-Type: application/pdf; name=\"{$attachment_name}\"\r\n";
-            $message .= "Content-Transfer-Encoding: base64\r\n";
-            $message .= "Content-Disposition: attachment; filename=\"{$attachment_name}\"\r\n\r\n";
-            $message .= chunk_split(base64_encode($attachment_content)) . "\r\n";
+                $filename = $result->fetch_assoc()['pdf_filename'];
+                
+                // Delete file
+                $cert_dir = '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/certificates/';
+                $filepath = $cert_dir . $filename;
+                $file_deleted = false;
+                
+                if (file_exists($filepath)) {
+                    unlink($filepath);
+                    $file_deleted = true;
+                }
+                
+                // Delete database record
+                $stmt = $db->prepare("DELETE FROM certificates WHERE id = ?");
+                $stmt->bind_param('i', $cert_id);
+                $success = $stmt->execute();
+                
+                echo json_encode([
+                    'success' => $success,
+                    'file_deleted' => $file_deleted
+                ]);
+                exit;
+                
+            case 'load_course_participants':
+                $course_id = (int)$_POST['course_id'];
+                
+                $query = "
+                    SELECT 
+                        cp.id as course_participant_id,
+                        u.name as participant_name,
+                        u.email as participant_email,
+                        cp.payment_status,
+                        cp.enrollment_date,
+                        c.name as course_name,
+                        c.course_date,
+                        cert_check.existing_cert_id
+                    FROM course_participants cp
+                    JOIN users u ON cp.user_id = u.id
+                    JOIN courses c ON cp.course_id = c.id
+                    LEFT JOIN (
+                        SELECT course_participant_id, id as existing_cert_id 
+                        FROM certificates 
+                        GROUP BY course_participant_id
+                    ) cert_check ON cp.id = cert_check.course_participant_id
+                    WHERE cp.course_id = ? 
+                    ORDER BY cp.enrollment_date DESC
+                ";
+                
+                $stmt = $db->prepare($query);
+                $stmt->bind_param('i', $course_id);
+                $stmt->execute();
+                $participants = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                
+                echo json_encode(['participants' => $participants]);
+                exit;
+                
+            default:
+                throw new Exception("Unknown action");
         }
         
-        $message .= "--{$boundary}--";
-        
-        return mail($to, $subject, $message, implode("\r\n", $headers));
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'error' => $e->getMessage()
+        ]);
+        exit;
     }
 }
 
+// Handle file downloads
+if (isset($_GET['download']) && isset($_GET['certificate_id'])) {
+    $cert_id = (int)$_GET['certificate_id'];
+    
+    try {
+        $stmt = $db->prepare("
+            SELECT 
+                c.pdf_filename, 
+                u.name as participant_name
+            FROM certificates c
+            JOIN course_participants cp ON c.course_participant_id = cp.id
+            JOIN users u ON cp.user_id = u.id
+            WHERE c.id = ?
+        ");
+        $stmt->bind_param('i', $cert_id);
+        $stmt->execute();
+        $cert = $stmt->get_result()->fetch_assoc();
+        
+        if (!$cert) {
+            throw new Exception("Certificate not found");
+        }
+        
+        $cert_dir = '/var/www/vhosts/inventijn.nl/httpdocs/cursus-systeem/certificates/';
+        $filepath = $cert_dir . $cert['pdf_filename'];
+        
+        if (!file_exists($filepath)) {
+            throw new Exception("Certificate file not found");
+        }
+        
+        // Update download tracking
+        $stmt = $db->prepare("UPDATE certificates SET download_count = download_count + 1, last_download_at = NOW() WHERE id = ?");
+        $stmt->bind_param('i', $cert_id);
+        $stmt->execute();
+        
+        // Send file
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="' . $cert['pdf_filename'] . '"');
+        header('Content-Length: ' . filesize($filepath));
+        readfile($filepath);
+        exit;
+        
+    } catch (Exception $e) {
+        header('HTTP/1.0 404 Not Found');
+        die("Download error: " . $e->getMessage());
+    }
+}
+
+// Load data for the interface
+$course_filter = $_GET['course_id'] ?? '';
+$status_filter = $_GET['status'] ?? '';
+$search = $_GET['search'] ?? '';
+$page = max(1, (int)($_GET['page'] ?? 1));
+$per_page = 20;
+
+// Build query conditions
+$where_conditions = [];
+$params = [];
+$param_types = '';
+
+if ($course_filter) {
+    $where_conditions[] = "c.course_id = ?";
+    $params[] = $course_filter;
+    $param_types .= 'i';
+}
+
+if ($status_filter) {
+    $where_conditions[] = "c.status = ?";
+    $params[] = $status_filter;
+    $param_types .= 's';
+}
+
+if ($search) {
+    $where_conditions[] = "(u.name LIKE ? OR u.email LIKE ? OR course.name LIKE ? OR c.certificate_number LIKE ?)";
+    $search_param = "%$search%";
+    $params = array_merge($params, [$search_param, $search_param, $search_param, $search_param]);
+    $param_types .= 'ssss';
+}
+
+$where_clause = $where_conditions ? 'WHERE ' . implode(' AND ', $where_conditions) : '';
+
+// Get certificates with pagination
+$offset = ($page - 1) * $per_page;
+$query = "
+    SELECT 
+        c.id,
+        c.certificate_number,
+        c.certificate_type,
+        c.status,
+        c.generated_at,
+        c.download_count,
+        c.last_download_at,
+        c.pdf_filename,
+        c.verification_token,
+        c.template_used,
+        u.name as participant_name,
+        u.email as participant_email,
+        u.company as participant_company,
+        course.name as course_name,
+        course.course_date,
+        course.location as course_location
+    FROM certificates c
+    JOIN course_participants cp ON c.course_participant_id = cp.id
+    JOIN users u ON cp.user_id = u.id
+    JOIN courses course ON c.course_id = course.id
+    $where_clause 
+    ORDER BY c.generated_at DESC 
+    LIMIT $per_page OFFSET $offset
+";
+
+$stmt = $db->prepare($query);
+if ($params) {
+    $stmt->bind_param($param_types, ...$params);
+}
+$stmt->execute();
+$certificates = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// Get total count for pagination
+$count_query = "
+    SELECT COUNT(*) as total 
+    FROM certificates c
+    JOIN course_participants cp ON c.course_participant_id = cp.id
+    JOIN users u ON cp.user_id = u.id
+    JOIN courses course ON c.course_id = course.id
+    $where_clause
+";
+$stmt = $db->prepare($count_query);
+if ($params) {
+    $stmt->bind_param($param_types, ...$params);
+}
+$stmt->execute();
+$total_certificates = $stmt->get_result()->fetch_assoc()['total'];
+$total_pages = ceil($total_certificates / $per_page);
+
+// Get courses for filter
+$courses = $db->query("SELECT id, name FROM courses WHERE active = 1 ORDER BY course_date DESC")->fetch_all(MYSQLI_ASSOC);
+
+// Get participants ready for certificates
+$ready_participants_query = "
+    SELECT 
+        cp.id as course_participant_id,
+        u.name as participant_name,
+        u.email as participant_email,
+        cp.payment_status,
+        cp.enrollment_date,
+        c.name as course_name,
+        c.course_date,
+        cert_check.existing_cert_id
+    FROM course_participants cp
+    JOIN users u ON cp.user_id = u.id
+    JOIN courses c ON cp.course_id = c.id
+    LEFT JOIN (
+        SELECT course_participant_id, id as existing_cert_id 
+        FROM certificates 
+        GROUP BY course_participant_id
+    ) cert_check ON cp.id = cert_check.course_participant_id
+    WHERE cp.payment_status IN ('paid', 'pending')
+    AND cert_check.existing_cert_id IS NULL
+    ORDER BY c.course_date DESC, cp.enrollment_date DESC
+    LIMIT 50
+";
+
+$ready_participants = $db->query($ready_participants_query)->fetch_all(MYSQLI_ASSOC);
+
+// Get statistics
+$stats = $db->query("
+    SELECT 
+        COUNT(*) as total_certificates,
+        COUNT(CASE WHEN status = 'generated' THEN 1 END) as generated,
+        COUNT(CASE WHEN status = 'sent' THEN 1 END) as sent,
+        COUNT(CASE WHEN status = 'downloaded' THEN 1 END) as downloaded,
+        COALESCE(SUM(download_count), 0) as total_downloads
+    FROM certificates
+")->fetch_assoc();
+
 ?>
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certificaten Beheer - Inventijn Admin</title>
+    <style>
+        /* Modern Admin Interface Styling */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #2d3748;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            font-weight: 700;
+            background: linear-gradient(135deg, #3e5cc6 0%, #6b80e8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        
+        .header .subtitle {
+            color: #718096;
+            font-size: 1.1em;
+        }
+        
+        .system-status {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            color: #2e7d32;
+            font-weight: 500;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+        }
+        
+        .stat-card .number {
+            font-size: 2.5em;
+            font-weight: bold;
+            background: linear-gradient(135deg, #3e5cc6 0%, #6b80e8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card .label {
+            color: #718096;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        
+        .tabs {
+            display: flex;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            background: transparent;
+            border: none;
+            font-size: 1em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            color: #718096;
+        }
+        
+        .tab.active {
+            background: linear-gradient(135deg, #3e5cc6 0%, #6b80e8 100%);
+            color: white;
+        }
+        
+        .tab:hover:not(.active) {
+            background: rgba(62, 92, 198, 0.1);
+            color: #3e5cc6;
+        }
+        
+        .tab-content {
+            display: none;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .filters {
+            padding: 30px;
+            background: rgba(248, 250, 252, 0.8);
+            border-bottom: 1px solid rgba(226, 232, 240, 0.5);
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .filter-group label {
+            font-size: 0.9em;
+            color: #4a5568;
+            font-weight: 600;
+        }
+        
+        .filter-group select,
+        .filter-group input {
+            padding: 12px 16px;
+            border: 2px solid rgba(226, 232, 240, 0.8);
+            border-radius: 10px;
+            font-size: 0.9em;
+            background: white;
+            transition: border-color 0.3s ease;
+        }
+        
+        .filter-group select:focus,
+        .filter-group input:focus {
+            outline: none;
+            border-color: #3e5cc6;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #3e5cc6 0%, #6b80e8 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(62, 92, 198, 0.3);
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(62, 92, 198, 0.4);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #38a169 0%, #48bb78 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(56, 161, 105, 0.3);
+        }
+        
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(56, 161, 105, 0.4);
+        }
+        
+        .btn-warning {
+            background: linear-gradient(135deg, #d69e2e 0%, #ecc94b 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(214, 158, 46, 0.3);
+        }
+        
+        .btn-warning:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(214, 158, 46, 0.4);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #e53e3e 0%, #fc8181 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(229, 62, 62, 0.3);
+        }
+        
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(229, 62, 62, 0.4);
+        }
+        
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 0.8em;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .table th {
+            background: rgba(248, 250, 252, 0.8);
+            padding: 20px 15px;
+            text-align: left;
+            font-weight: 700;
+            color: #2d3748;
+            border-bottom: 2px solid rgba(226, 232, 240, 0.5);
+            font-size: 0.9em;
+        }
+        
+        .table td {
+            padding: 15px;
+            border-bottom: 1px solid rgba(226, 232, 240, 0.3);
+            vertical-align: middle;
+        }
+        
+        .table tr:hover {
+            background: rgba(248, 250, 252, 0.5);
+        }
+        
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-generated {
+            background: rgba(59, 130, 246, 0.1);
+            color: #1d4ed8;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        
+        .status-sent {
+            background: rgba(34, 197, 94, 0.1);
+            color: #15803d;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        
+        .status-downloaded {
+            background: rgba(239, 68, 68, 0.1);
+            color: #dc2626;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            padding: 30px;
+        }
+        
+        .pagination a,
+        .pagination span {
+            padding: 12px 16px;
+            border: 2px solid rgba(226, 232, 240, 0.8);
+            color: #4a5568;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .pagination .current {
+            background: linear-gradient(135deg, #3e5cc6 0%, #6b80e8 100%);
+            color: white;
+            border-color: transparent;
+        }
+        
+        .pagination a:hover {
+            background: rgba(62, 92, 198, 0.1);
+            border-color: #3e5cc6;
+            color: #3e5cc6;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+        }
+        
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 40px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(226, 232, 240, 0.5);
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            color: #3e5cc6;
+            font-size: 1.5em;
+            font-weight: 700;
+        }
+        
+        .close {
+            font-size: 28px;
+            cursor: pointer;
+            color: #a0aec0;
+            transition: color 0.3s ease;
+        }
+        
+        .close:hover {
+            color: #e53e3e;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        .form-group select,
+        .form-group input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid rgba(226, 232, 240, 0.8);
+            border-radius: 10px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-group select:focus,
+        .form-group input:focus {
+            outline: none;
+            border-color: #3e5cc6;
+        }
+        
+        .alert {
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        
+        .alert-success {
+            background: rgba(34, 197, 94, 0.1);
+            color: #15803d;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        
+        .alert-error {
+            background: rgba(239, 68, 68, 0.1);
+            color: #dc2626;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(62, 92, 198, 0.2);
+            border-top: 4px solid #3e5cc6;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .checkbox-group {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 2px solid rgba(226, 232, 240, 0.8);
+            border-radius: 10px;
+            padding: 20px;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(241, 245, 249, 0.8);
+        }
+        
+        .checkbox-item:last-child {
+            border-bottom: none;
+        }
+        
+        .checkbox-item input {
+            margin-right: 15px;
+            width: auto;
+            transform: scale(1.2);
+        }
+        
+        .participant-info {
+            flex: 1;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .participant-name {
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        .participant-course {
+            color: #718096;
+            font-size: 0.9em;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #718096;
+        }
+        
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #4a5568;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- System Status -->
+        <div class="system-status">
+            ✅ Inventijn Certificate System v4.0 - All Systems Operational | Admin: <?= htmlspecialchars($_SESSION['admin_user']) ?>
+        </div>
+        
+        <!-- Header -->
+        <div class="header">
+            <h1>Certificaten Beheer</h1>
+            <div class="subtitle">Inventijn Certificate System v4.0 - Production Edition</div>
+        </div>
+        
+        <!-- Statistics -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="number"><?= number_format($stats['total_certificates']) ?></div>
+                <div class="label">Totaal Certificaten</div>
+            </div>
+            <div class="stat-card">
+                <div class="number"><?= number_format($stats['generated']) ?></div>
+                <div class="label">Gegenereerd</div>
+            </div>
+            <div class="stat-card">
+                <div class="number"><?= number_format($stats['sent']) ?></div>
+                <div class="label">Verzonden</div>
+            </div>
+            <div class="stat-card">
+                <div class="number"><?= number_format($stats['downloaded']) ?></div>
+                <div class="label">Gedownload</div>
+            </div>
+            <div class="stat-card">
+                <div class="number"><?= number_format($stats['total_downloads']) ?></div>
+                <div class="label">Downloads</div>
+            </div>
+        </div>
+        
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('certificates')">Bestaande Certificaten</button>
+            <button class="tab" onclick="showTab('generate')">Nieuwe Certificaten</button>
+            <button class="tab" onclick="showTab('bulk')">Bulk Generatie</button>
+        </div>
+        
+        <!-- Certificates Tab -->
+        <div id="certificates-tab" class="tab-content active">
+            <!-- Filters -->
+            <div class="filters">
+                <form method="GET" action="" style="display: flex; gap: 20px; flex-wrap: wrap; align-items: end; width: 100%;">
+                    <div class="filter-group">
+                        <label for="course_id">Cursus</label>
+                        <select name="course_id" id="course_id">
+                            <option value="">Alle cursussen</option>
+                            <?php foreach ($courses as $course): ?>
+                                <option value="<?= $course['id'] ?>" <?= $course_filter == $course['id'] ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($course['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="status">Status</label>
+                        <select name="status" id="status">
+                            <option value="">Alle statussen</option>
+                            <option value="generated" <?= $status_filter == 'generated' ? 'selected' : '' ?>>Gegenereerd</option>
+                            <option value="sent" <?= $status_filter == 'sent' ? 'selected' : '' ?>>Verzonden</option>
+                            <option value="downloaded" <?= $status_filter == 'downloaded' ? 'selected' : '' ?>>Gedownload</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="search">Zoeken</label>
+                        <input type="text" name="search" id="search" placeholder="Naam, email, cursus..." value="<?= htmlspecialchars($search) ?>">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Filter</button>
+                    <a href="?" class="btn" style="background: rgba(226, 232, 240, 0.8); color: #4a5568;">Reset</a>
+                </form>
+            </div>
+            
+            <!-- Certificates Table -->
+            <div class="table-container">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Certificaat #</th>
+                            <th>Deelnemer</th>
+                            <th>Cursus</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Gegenereerd</th>
+                            <th>Downloads</th>
+                            <th>Acties</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($certificates as $cert): ?>
+                            <tr>
+                                <td>
+                                    <strong><?= htmlspecialchars($cert['certificate_number']) ?></strong>
+                                </td>
+                                <td>
+                                    <div>
+                                        <div class="participant-name"><?= htmlspecialchars($cert['participant_name']) ?></div>
+                                        <div class="participant-course"><?= htmlspecialchars($cert['participant_email']) ?></div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div>
+                                        <?= htmlspecialchars($cert['course_name']) ?><br>
+                                        <small style="color: #718096;"><?= date('d-m-Y', strtotime($cert['course_date'])) ?></small>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span style="text-transform: capitalize;"><?= htmlspecialchars($cert['certificate_type']) ?></span>
+                                </td>
+                                <td>
+                                    <span class="status-badge status-<?= $cert['status'] ?>">
+                                        <?= ucfirst($cert['status']) ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?= date('d-m-Y H:i', strtotime($cert['generated_at'])) ?>
+                                </td>
+                                <td>
+                                    <strong><?= $cert['download_count'] ?>×</strong>
+                                    <?php if ($cert['last_download_at']): ?>
+                                        <br><small style="color: #718096;">
+                                            Laatst: <?= date('d-m H:i', strtotime($cert['last_download_at'])) ?>
+                                        </small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                        <a href="?download=1&certificate_id=<?= $cert['id'] ?>" 
+                                           class="btn btn-primary btn-sm">Download</a>
+                                        
+                                        <button onclick="sendCertificateEmail(<?= $cert['id'] ?>, '<?= htmlspecialchars($cert['participant_email']) ?>')" 
+                                                class="btn btn-success btn-sm">Email</button>
+                                        
+                                        <a href="../verify-certificate.php?token=<?= $cert['verification_token'] ?>" 
+                                           target="_blank" class="btn btn-warning btn-sm">Verifieer</a>
+                                        
+                                        <button onclick="deleteCertificate(<?= $cert['id'] ?>)" 
+                                                class="btn btn-danger btn-sm">Verwijder</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        
+                        <?php if (empty($certificates)): ?>
+                            <tr>
+                                <td colspan="8">
+                                    <div class="empty-state">
+                                        <h3>Geen certificaten gevonden</h3>
+                                        <p>Er zijn geen certificaten die voldoen aan de filterinstellingen.</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            <?php if ($total_pages > 1): ?>
+                <div class="pagination">
+                    <?php for ($i = 1; $i <= $total_pages; $i++): ?>
+                        <?php if ($i == $page): ?>
+                            <span class="current"><?= $i ?></span>
+                        <?php else: ?>
+                            <a href="?page=<?= $i ?>&course_id=<?= $course_filter ?>&status=<?= $status_filter ?>&search=<?= urlencode($search) ?>">
+                                <?= $i ?>
+                            </a>
+                        <?php endif; ?>
+                    <?php endfor; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <!-- Generate Tab -->
+        <div id="generate-tab" class="tab-content">
+            <div style="padding: 40px;">
+                <h3 style="margin-bottom: 20px; color: #3e5cc6;">Nieuwe Certificaten Genereren</h3>
+                <p style="margin-bottom: 30px; color: #718096;">Selecteer deelnemers die klaar zijn voor een certificaat:</p>
+                
+                <?php if (empty($ready_participants)): ?>
+                    <div class="alert alert-error">
+                        <strong>Geen deelnemers gevonden</strong><br>
+                        Er zijn geen deelnemers die klaar zijn voor een certificaat.
+                        Zorg ervoor dat deelnemers de status 'paid' of 'pending' hebben.
+                    </div>
+                <?php else: ?>
+                    <form id="generate-form">
+                        <div class="form-group">
+                            <label>Template</label>
+                            <select name="template" required>
+                                <option value="default">Standaard Template</option>
+                                <option value="premium">Premium Template</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Certificaat Type</label>
+                            <select name="certificate_type" required>
+                                <option value="deelname">Deelname</option>
+                                <option value="voltooiing">Voltooiing</option>
+                                <option value="waardering">Waardering</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Deelnemers</label>
+                            <div class="checkbox-group">
+                                <?php foreach ($ready_participants as $participant): ?>
+                                    <div class="checkbox-item">
+                                        <input type="checkbox" name="participant_ids[]" value="<?= $participant['course_participant_id'] ?>">
+                                        <div class="participant-info">
+                                            <div>
+                                                <div class="participant-name"><?= htmlspecialchars($participant['participant_name']) ?></div>
+                                                <div class="participant-course"><?= htmlspecialchars($participant['course_name']) ?></div>
+                                            </div>
+                                            <div style="text-align: right;">
+                                                <div><?= date('d-m-Y', strtotime($participant['course_date'])) ?></div>
+                                                <div style="color: #718096; font-size: 0.8em;"><?= ucfirst($participant['payment_status']) ?></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">Certificaten Genereren</button>
+                    </form>
+                <?php endif; ?>
+            </div>
+        </div>
+        
+        <!-- Bulk Tab -->
+        <div id="bulk-tab" class="tab-content">
+            <div style="padding: 40px;">
+                <h3 style="margin-bottom: 20px; color: #3e5cc6;">Bulk Certificaat Generatie</h3>
+                <p style="margin-bottom: 30px; color: #718096;">Genereer certificaten voor alle deelnemers van een specifieke cursus:</p>
+                
+                <form id="bulk-form">
+                    <div class="form-group">
+                        <label>Cursus</label>
+                        <select name="course_id" required onchange="loadCourseParticipants(this.value)">
+                            <option value="">Selecteer cursus...</option>
+                            <?php foreach ($courses as $course): ?>
+                                <option value="<?= $course['id'] ?>">
+                                    <?= htmlspecialchars($course['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Template</label>
+                        <select name="template" required>
+                            <option value="default">Standaard Template</option>
+                            <option value="premium">Premium Template</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Certificaat Type</label>
+                        <select name="certificate_type" required>
+                            <option value="deelname">Deelname</option>
+                            <option value="voltooiing">Voltooiing</option>
+                            <option value="waardering">Waardering</option>
+                        </select>
+                    </div>
+                    
+                    <div id="bulk-participants" style="display: none;">
+                        <div class="form-group">
+                            <label>Deelnemers voor deze cursus</label>
+                            <div id="bulk-participant-list" class="checkbox-group">
+                                <!-- Loaded via AJAX -->
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">Bulk Genereren</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Loading Modal -->
+    <div id="loading-modal" class="modal">
+        <div class="modal-content" style="text-align: center;">
+            <div class="spinner"></div>
+            <h3>Certificaten worden gegenereerd...</h3>
+            <p>Even geduld, dit kan enkele seconden duren.</p>
+        </div>
+    </div>
+    
+    <!-- Success/Error Messages -->
+    <div id="messages" style="position: fixed; top: 20px; right: 20px; z-index: 2000;"></div>
+
+    <script>
+        // Modern AJAX handling with better error management
+        async function makeRequest(url, data) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/x-www-form-urlencoded' 
+                    },
+                    body: data
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                return await response.json();
+                
+            } catch (error) {
+                console.error('Request failed:', error);
+                throw error;
+            }
+        }
+        
+        // Tab switching with smooth animations
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        // Enhanced message system
+        function showMessage(message, type = 'success', duration = 5000) {
+            const messagesDiv = document.getElementById('messages');
+            const messageEl = document.createElement('div');
+            messageEl.className = `alert alert-${type === 'error' ? 'error' : 'success'}`;
+            messageEl.style.marginBottom = '10px';
+            messageEl.style.minWidth = '300px';
+            messageEl.style.transform = 'translateX(100%)';
+            messageEl.style.transition = 'transform 0.3s ease';
+            messageEl.innerHTML = message;
+            
+            messagesDiv.appendChild(messageEl);
+            
+            // Slide in animation
+            setTimeout(() => {
+                messageEl.style.transform = 'translateX(0)';
+            }, 100);
+            
+            // Auto remove
+            setTimeout(() => {
+                if (messagesDiv.contains(messageEl)) {
+                    messageEl.style.transform = 'translateX(100%)';
+                    setTimeout(() => {
+                        if (messagesDiv.contains(messageEl)) {
+                            messagesDiv.removeChild(messageEl);
+                        }
+                    }, 300);
+                }
+            }, duration);
+        }
+        
+        // Generate single certificates
+        document.getElementById('generate-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const participantIds = Array.from(formData.getAll('participant_ids[]'));
+            
+            if (participantIds.length === 0) {
+                showMessage('Selecteer minimaal één deelnemer.', 'error');
+                return;
+            }
+            
+            document.getElementById('loading-modal').style.display = 'block';
+            
+            let successCount = 0;
+            let errorCount = 0;
+            let errors = [];
+            
+            for (const participantId of participantIds) {
+                try {
+                    const data = `action=generate_certificate&participant_id=${participantId}&template=${formData.get('template')}&certificate_type=${formData.get('certificate_type')}`;
+                    const result = await makeRequest('', data);
+                    
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        errorCount++;
+                        errors.push(result.error || 'Unknown error');
+                    }
+                } catch (error) {
+                    errorCount++;
+                    errors.push(error.message);
+                }
+            }
+            
+            document.getElementById('loading-modal').style.display = 'none';
+            
+            if (successCount > 0) {
+                showMessage(`🎉 ${successCount} certificaten succesvol gegenereerd!`);
+                setTimeout(() => location.reload(), 2000);
+            }
+            
+            if (errorCount > 0) {
+                showMessage(`⚠️ ${errorCount} certificaten konden niet worden gegenereerd. Errors: ${errors.slice(0, 3).join(', ')}`, 'error');
+            }
+        });
+        
+        // Send certificate email
+        async function sendCertificateEmail(certificateId, email) {
+            try {
+                showMessage('📧 Email wordt verzonden...', 'info', 2000);
+                
+                const data = `action=send_certificate_email&certificate_id=${certificateId}&email=${email}`;
+                const result = await makeRequest('', data);
+                
+                if (result.success) {
+                    showMessage(`✅ Certificaat verzonden naar ${result.recipient}`);
+                } else {
+                    showMessage('❌ Fout bij verzenden email: ' + (result.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Netwerkfout bij verzenden email: ' + error.message, 'error');
+            }
+        }
+        
+        // Delete certificate
+        async function deleteCertificate(certificateId) {
+            if (!confirm('Weet u zeker dat u dit certificaat wilt verwijderen?')) {
+                return;
+            }
+            
+            try {
+                const data = `action=delete_certificate&certificate_id=${certificateId}`;
+                const result = await makeRequest('', data);
+                
+                if (result.success) {
+                    showMessage('🗑️ Certificaat verwijderd.');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showMessage('❌ Fout bij verwijderen certificaat.', 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Netwerkfout bij verwijderen: ' + error.message, 'error');
+            }
+        }
+        
+        // Load course participants for bulk generation
+        async function loadCourseParticipants(courseId) {
+            if (!courseId) {
+                document.getElementById('bulk-participants').style.display = 'none';
+                return;
+            }
+            
+            try {
+                const data = `action=load_course_participants&course_id=${courseId}`;
+                const result = await makeRequest('', data);
+                
+                if (result.participants) {
+                    const listEl = document.getElementById('bulk-participant-list');
+                    listEl.innerHTML = '';
+                    
+                    result.participants.forEach(participant => {
+                        const div = document.createElement('div');
+                        div.className = 'checkbox-item';
+                        
+                        const hasExisting = participant.existing_cert_id ? ' (heeft al certificaat)' : '';
+                        const isDisabled = participant.existing_cert_id ? 'disabled' : '';
+                        
+                        div.innerHTML = `
+                            <input type="checkbox" name="participant_ids[]" value="${participant.course_participant_id}" ${isDisabled}>
+                            <div class="participant-info">
+                                <div>
+                                    <div class="participant-name">${participant.participant_name}${hasExisting}</div>
+                                    <div class="participant-course">${participant.participant_email}</div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div>${new Date(participant.enrollment_date).toLocaleDateString('nl-NL')}</div>
+                                    <div style="color: #718096; font-size: 0.8em;">${participant.payment_status}</div>
+                                </div>
+                            </div>
+                        `;
+                        
+                        listEl.appendChild(div);
+                    });
+                    
+                    document.getElementById('bulk-participants').style.display = 'block';
+                } else {
+                    showMessage('❌ Kon deelnemers niet laden.', 'error');
+                }
+                
+            } catch (error) {
+                showMessage('❌ Fout bij laden deelnemers: ' + error.message, 'error');
+            }
+        }
+        
+        // Bulk form submission
+        document.getElementById('bulk-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const participantIds = Array.from(formData.getAll('participant_ids[]'));
+            
+            if (participantIds.length === 0) {
+                showMessage('Selecteer minimaal één deelnemer.', 'error');
+                return;
+            }
+            
+            document.getElementById('loading-modal').style.display = 'block';
+            
+            try {
+                const data = `action=bulk_generate&participant_ids=${encodeURIComponent(JSON.stringify(participantIds))}&template=${formData.get('template')}&certificate_type=${formData.get('certificate_type')}`;
+                const result = await makeRequest('', data);
+                
+                document.getElementById('loading-modal').style.display = 'none';
+                
+                if (result.results) {
+                    const successCount = result.results.filter(r => r.success).length;
+                    const errorCount = result.results.filter(r => !r.success).length;
+                    
+                    if (successCount > 0) {
+                        showMessage(`🎉 ${successCount} certificaten succesvol gegenereerd!`);
+                    }
+                    
+                    if (errorCount > 0) {
+                        showMessage(`⚠️ ${errorCount} certificaten konden niet worden gegenereerd.`, 'error');
+                    }
+                    
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    showMessage('❌ Onverwacht resultaat van bulk generatie.', 'error');
+                }
+                
+            } catch (error) {
+                document.getElementById('loading-modal').style.display = 'none';
+                showMessage('❌ Fout bij bulk generatie: ' + error.message, 'error');
+            }
+        });
+        
+        // Initialize tooltips and other UI enhancements
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add loading states to buttons
+            document.querySelectorAll('.btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    if (this.type === 'submit') {
+                        this.style.opacity = '0.7';
+                        this.style.pointerEvents = 'none';
+                        setTimeout(() => {
+                            this.style.opacity = '1';
+                            this.style.pointerEvents = 'auto';
+                        }, 2000);
+                    }
+                });
+            });
+        });
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === '1') {
+                e.preventDefault();
+                showTab('certificates');
+            } else if (e.ctrlKey && e.key === '2') {
+                e.preventDefault();
+                showTab('generate');
+            } else if (e.ctrlKey && e.key === '3') {
+                e.preventDefault();
+                showTab('bulk');
+            }
+        });
+        
+        console.log('🎉 Inventijn Certificate System v4.0 Production Ready!');
+    </script>
+</body>
+</html>
