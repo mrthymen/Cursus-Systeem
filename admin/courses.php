@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Systeem - Course Management v6.0.6
+ * Cursus Systeem - Course Management v6.0.7
  * Clean foundation - no integration complexity
  * Strategy: Make core functionality bulletproof first
  * Updated: 2025-06-10
@@ -15,6 +15,7 @@
  * v6.0.4 - UI fixes: course title visible, softer design, NL formatting, NL text
  * v6.0.5 - HOTFIX: Course title display, remove Duration:h, proper NL date format
  * v6.0.6 - FIXED: Display bug resolved, time logic cleaned up (course_date vs time_range)
+ * v6.0.7 - COMPLETE OVERHAUL: Fixed ALL display sections, removed ALL English text remnants
  */
 
 session_start();
@@ -214,7 +215,7 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cursus Beheer - Cursus Systeem v6.0.6</title>
+    <title>Cursus Beheer - Cursus Systeem v6.0.7</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         /* Clean v6.0 Design System */
@@ -664,10 +665,14 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                             </span>
                         </div>
                         
-                        <p style="margin-bottom: 1rem; color: #555; line-height: 1.6;">
-                            <?= isset($course['description']) && !empty(trim($course['description'])) ? nl2br(htmlspecialchars(trim($course['description']))) : '<em>Geen beschrijving beschikbaar</em>' ?>
-                        </p>
+                        <!-- COURSE DESCRIPTION -->
+                        <div style="margin-bottom: 1.5rem;">
+                            <p style="color: #555; line-height: 1.6; font-size: 15px;">
+                                <?= isset($course['description']) && !empty(trim($course['description'])) ? nl2br(htmlspecialchars(trim($course['description']))) : '<em>Geen beschrijving beschikbaar</em>' ?>
+                            </p>
+                        </div>
                         
+                        <!-- COURSE STATISTICS - DUTCH LABELS -->
                         <div class="course-meta">
                             <div class="meta-item">
                                 <div class="meta-label">Deelnemers</div>
@@ -691,9 +696,10 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                             </div>
                         </div>
                         
+                        <!-- PARTICIPANTS SECTION - DUTCH -->
                         <?php if ($course['participant_count'] > 0): ?>
                             <div class="participants-section">
-                                <strong style="margin-bottom: 1rem; display: block;">Deelnemers:</strong>
+                                <strong style="margin-bottom: 1rem; display: block; color: #1f2937;">Deelnemers:</strong>
                                 <?php
                                 try {
                                     $participants_query = "
@@ -707,39 +713,50 @@ if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
                                     $stmt->execute([$course['id']]);
                                     $participants = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     
-                                    foreach ($participants as $participant):
+                                    if (empty($participants)) {
+                                        echo '<p style="color: var(--neutral); font-style: italic;">Geen deelnemers gevonden in de database.</p>';
+                                    } else {
+                                        foreach ($participants as $participant):
                                 ?>
                                     <div class="participant-item">
                                         <div class="participant-info">
-                                            <div class="participant-name"><?= htmlspecialchars($participant['name']) ?></div>
-                                            <div class="participant-email"><?= htmlspecialchars($participant['email']) ?></div>
+                                            <div class="participant-name"><?= htmlspecialchars($participant['name'] ?? 'Onbekende naam') ?></div>
+                                            <div class="participant-email"><?= htmlspecialchars($participant['email'] ?? 'Geen email') ?></div>
                                         </div>
                                         <form method="POST" style="display: inline;">
                                             <input type="hidden" name="action" value="update_participant_payment">
                                             <input type="hidden" name="participant_id" value="<?= $participant['id'] ?>">
                                             <select name="payment_status" onchange="this.form.submit()" class="payment-select">
-                                                <option value="pending" <?= $participant['payment_status'] === 'pending' ? 'selected' : '' ?>>Wachtend</option>
-                                                <option value="paid" <?= $participant['payment_status'] === 'paid' ? 'selected' : '' ?>>Betaald</option>
-                                                <option value="cancelled" <?= $participant['payment_status'] === 'cancelled' ? 'selected' : '' ?>>Geannuleerd</option>
+                                                <option value="pending" <?= ($participant['payment_status'] ?? '') === 'pending' ? 'selected' : '' ?>>Wachtend</option>
+                                                <option value="paid" <?= ($participant['payment_status'] ?? '') === 'paid' ? 'selected' : '' ?>>Betaald</option>
+                                                <option value="cancelled" <?= ($participant['payment_status'] ?? '') === 'cancelled' ? 'selected' : '' ?>>Geannuleerd</option>
                                             </select>
                                         </form>
                                     </div>
                                 <?php
-                                    endforeach;
+                                        endforeach;
+                                    }
                                 } catch (Exception $e) {
-                                    echo '<p style="color: var(--error);">Fout bij laden deelnemers: ' . $e->getMessage() . '</p>';
+                                    echo '<p style="color: var(--error);">Fout bij laden deelnemers: ' . htmlspecialchars($e->getMessage()) . '</p>';
                                 }
                                 ?>
                             </div>
+                        <?php else: ?>
+                            <div style="padding: 1rem; background: #f9fafb; border-radius: 6px; margin: 1rem 0;">
+                                <p style="color: var(--neutral); text-align: center; margin: 0; font-style: italic;">
+                                    Nog geen deelnemers ingeschreven voor deze cursus.
+                                </p>
+                            </div>
                         <?php endif; ?>
                         
+                        <!-- ACTION BUTTONS - DUTCH -->
                         <div class="btn-group">
                             <a href="courses.php?edit=<?= $course['id'] ?>" class="btn btn-primary">
                                 <i class="fas fa-edit"></i> Bewerken
                             </a>
                             
                             <?php if ($course['participant_count'] == 0): ?>
-                                <form method="POST" style="display: inline;" onsubmit="return confirm('Weet je zeker dat je deze cursus wilt verwijderen?')">
+                                <form method="POST" style="display: inline;" onsubmit="return confirm('Weet je zeker dat je deze cursus wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.')">
                                     <input type="hidden" name="action" value="delete_course">
                                     <input type="hidden" name="course_id" value="<?= $course['id'] ?>">
                                     <button type="submit" class="btn btn-danger">
