@@ -1,8 +1,8 @@
 <?php
 /**
- * Fixed Registration Processor - v6.2.3
- * FIXED: Column name mapping to match existing database structure
- * telefoon → phone, organisatie → company
+ * Quick Fix Registration Processor - v6.2.4
+ * FIXED: Removed 'source' column from course_participants INSERT
+ * All other functionality intact
  */
 
 session_start();
@@ -72,7 +72,7 @@ if (strlen($data['naam']) < 2) {
     exit('invalid_name');
 }
 
-// FIXED: Helper function with correct column names
+// FIXED: Helper function with correct column names (phone, company)
 function createOrGetUser($pdo, $naam, $email, $telefoon = '', $organisatie = '') {
     try {
         // Check if user exists
@@ -81,7 +81,7 @@ function createOrGetUser($pdo, $naam, $email, $telefoon = '', $organisatie = '')
         $existing_user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($existing_user) {
-            // Update existing user info - FIXED: Use correct column names
+            // Update existing user info
             $stmt = $pdo->prepare("
                 UPDATE users SET 
                     name = ?, phone = ?, company = ?, updated_at = NOW()
@@ -91,7 +91,7 @@ function createOrGetUser($pdo, $naam, $email, $telefoon = '', $organisatie = '')
             
             return $existing_user['id'];
         } else {
-            // Create new user - FIXED: Use correct column names (phone, company)
+            // Create new user
             $stmt = $pdo->prepare("
                 INSERT INTO users (name, email, phone, company, created_at, updated_at)
                 VALUES (?, ?, ?, ?, NOW(), NOW())
@@ -107,6 +107,7 @@ function createOrGetUser($pdo, $naam, $email, $telefoon = '', $organisatie = '')
     }
 }
 
+// FIXED: enrollUserInCourse - REMOVED 'source' column
 function enrollUserInCourse($pdo, $user_id, $course_id) {
     try {
         // Check if already enrolled
@@ -143,11 +144,11 @@ function enrollUserInCourse($pdo, $user_id, $course_id) {
             return 'course_full';
         }
         
-        // Enroll user with pending payment status
+        // FIXED: Enroll user WITHOUT 'source' column
         $stmt = $pdo->prepare("
             INSERT INTO course_participants 
-            (user_id, course_id, enrollment_date, payment_status, source)
-            VALUES (?, ?, NOW(), 'pending', 'universal_form')
+            (user_id, course_id, enrollment_date, payment_status)
+            VALUES (?, ?, NOW(), 'pending')
         ");
         $stmt->execute([$user_id, $course_id]);
         
@@ -239,7 +240,7 @@ function createIncompanyRequest($pdo, $data) {
 try {
     $pdo->beginTransaction();
     
-    // Create or get user - FIXED: Pass correct parameters
+    // Create or get user
     $user_id = createOrGetUser($pdo, $data['naam'], $data['email'], $data['telefoon'], $data['organisatie']);
     if (!$user_id) {
         throw new Exception("Failed to create/update user");
