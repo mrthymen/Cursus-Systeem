@@ -290,14 +290,29 @@ $stats = [
     <div class="card-header">
         <div>
             <h3><i class="fas fa-users"></i> Gebruikersbeheer</h3>
-            <p style="color: var(--text-secondary); margin: 0; font-size: var(--font-size-sm);">
-                Beheer gebruikers, cursustoekenningen en betalingen vanuit één centrale plek
-            </p>
         </div>
         <button onclick="openUserModal()" class="btn btn-primary">
             <i class="fas fa-plus"></i> Nieuwe Gebruiker
         </button>
     </div>
+     <div class="course-essentials">
+                        <div class="essential-item">
+                            <div class="essential-label"><i class="fas fa-users"></i> Totaal Gebruikers</div>
+                            <div class="essential-value"><?= number_format($stats['total_users']) ?></div>
+                        </div>
+                        <div class="essential-item">
+                            <div class="essential-label"><i class="fas fa-check-circle"></i> Actieve Gebruikers</div>
+                            <div class="essential-value"><?= number_format($stats['active_users']) ?></div>
+                        </div>
+                        <div class="essential-item">
+                            <div class="essential-label"><i class="fas fa-book"></i> Gem. Cursussen/User</div>
+                            <div class="essential-value"> <?= $stats['avg_courses'] ?></div>
+                        </div>
+                        <div class="essential-item">
+                            <div class="essential-label"><i class="fas fa-euro-sign"></i> Betaalde Inschrijvingen</div>
+                            <div class="essential-value"> <?= number_format($stats['paid_enrollments']) ?></div>
+                        </div>
+                    </div>
 </div>
 
 <!-- Messages -->
@@ -312,45 +327,6 @@ $stats = [
         <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?>
     </div>
 <?php endif; ?>
-
-<!-- Statistics Cards -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-6); margin-bottom: var(--space-6);">
-    <div class="card" style="border-left: 4px solid var(--primary);">
-        <h4 style="color: var(--text-secondary); font-size: var(--font-size-xs); text-transform: uppercase; margin-bottom: var(--space-2);">
-            <i class="fas fa-users"></i> Totaal Gebruikers
-        </h4>
-        <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--text-primary);">
-            <?= number_format($stats['total_users']) ?>
-        </div>
-    </div>
-    
-    <div class="card" style="border-left: 4px solid var(--success);">
-        <h4 style="color: var(--text-secondary); font-size: var(--font-size-xs); text-transform: uppercase; margin-bottom: var(--space-2);">
-            <i class="fas fa-check-circle"></i> Actieve Gebruikers
-        </h4>
-        <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--text-primary);">
-            <?= number_format($stats['active_users']) ?>
-        </div>
-    </div>
-    
-    <div class="card" style="border-left: 4px solid var(--warning);">
-        <h4 style="color: var(--text-secondary); font-size: var(--font-size-xs); text-transform: uppercase; margin-bottom: var(--space-2);">
-            <i class="fas fa-book"></i> Gem. Cursussen/User
-        </h4>
-        <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--text-primary);">
-            <?= $stats['avg_courses'] ?>
-        </div>
-    </div>
-    
-    <div class="card" style="border-left: 4px solid var(--neutral);">
-        <h4 style="color: var(--text-secondary); font-size: var(--font-size-xs); text-transform: uppercase; margin-bottom: var(--space-2);">
-            <i class="fas fa-euro-sign"></i> Betaalde Inschrijvingen
-        </h4>
-        <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--text-primary);">
-            <?= number_format($stats['paid_enrollments']) ?>
-        </div>
-    </div>
-</div>
 
 <!-- Search and Filter Toolbar -->
 <div class="card" style="margin-bottom: var(--space-6);">
