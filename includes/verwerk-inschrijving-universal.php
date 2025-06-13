@@ -658,7 +658,7 @@ try {
     debugLog("MAIN: Transaction committed successfully", "MAIN_COMMIT");
     
     // Send response
-    $response = ($email_type === 'enrollment') ? 'enrollment_success' : 'interest_success';
+   $response = 'ok'; // Consistent response die de frontend begrijpt
     debugLog("MAIN: Sending response: $response", "MAIN_RESPONSE");
     echo $response;
     
