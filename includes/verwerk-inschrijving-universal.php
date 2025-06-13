@@ -1,8 +1,8 @@
 <?php
 /**
- * Debug Processor with Custom Logging v6.3.3
- * Creates its own debug log file that you can read via FTP
- * ADDED: Custom logging system when server error log is not configured
+ * Debug Processor with Custom Logging v6.3.9
+ * Complete working version with branded emails and course data
+ * FIXED: Course data fetching, access key generation, proper function order
  */
 
 // CREATE CUSTOM ERROR LOG SYSTEM
@@ -41,7 +41,7 @@ debugLog("Config loaded successfully", "2");
 if (!defined('SITE_NAME')) define('SITE_NAME', 'Inventijn');
 if (!defined('SITE_URL')) define('SITE_URL', 'https://inventijn.nl');
 if (!defined('ADMIN_EMAIL')) define('ADMIN_EMAIL', 'martijn@inventijn.nl');
-if (!defined('FROM_EMAIL')) define('FROM_EMAIL', 'martijn@inventijn.nl'); // Use your working email
+if (!defined('FROM_EMAIL')) define('FROM_EMAIL', 'martijn@inventijn.nl');
 if (!defined('FROM_NAME')) define('FROM_NAME', 'Inventijn Training');
 
 debugLog("Email constants defined - ADMIN_EMAIL: " . ADMIN_EMAIL, "3");
@@ -130,7 +130,122 @@ if (strlen($data['naam']) < 2) {
 
 debugLog("Email and name validation passed", "12");
 
-// ===== SIMPLE EMAIL FUNCTIONS WITH EXTENSIVE LOGGING =====
+// ===== UTILITY FUNCTIONS =====
+
+/**
+ * Generate secure access key if function doesn't exist yet
+ */
+if (!function_exists('generateSecureAccessKey')) {
+    function generateSecureAccessKey() {
+        return bin2hex(random_bytes(16)); // 32 character hex string
+    }
+}
+
+// ===== DATABASE FUNCTIONS =====
+
+function createOrGetUser($pdo, $naam, $email, $telefoon = '', $organisatie = '') {
+    debugLog("DB: Creating/getting user for email: $email", "DB_USER");
+    
+    try {
+        // First check if user exists
+        $stmt = $pdo->prepare("SELECT id, access_key FROM users WHERE email = ?");
+        $stmt->execute([$email]);
+        $existing_user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existing_user) {
+            debugLog("DB: User exists, updating - ID: " . $existing_user['id'], "DB_USER");
+            
+            // Ensure access_key exists
+            if (empty($existing_user['access_key'])) {
+                $access_key = generateSecureAccessKey();
+                $stmt = $pdo->prepare("UPDATE users SET access_key = ? WHERE id = ?");
+                $stmt->execute([$access_key, $existing_user['id']]);
+                debugLog("DB: Generated missing access_key for existing user", "DB_USER");
+            }
+            
+            // Try to update with both possible column name variations
+            try {
+                $stmt = $pdo->prepare("UPDATE users SET name = ?, phone = ?, company = ?, updated_at = NOW() WHERE email = ?");
+                $stmt->execute([$naam, $telefoon, $organisatie, $email]);
+            } catch (PDOException $e) {
+                debugLog("DB: Failed with phone/company, trying telefoon/organisatie", "DB_USER");
+                try {
+                    $stmt = $pdo->prepare("UPDATE users SET name = ?, telefoon = ?, organisatie = ?, updated_at = NOW() WHERE email = ?");
+                    $stmt->execute([$naam, $telefoon, $organisatie, $email]);
+                } catch (PDOException $e2) {
+                    debugLog("DB: Both update attempts failed, continuing with basic user", "DB_USER");
+                }
+            }
+            
+            return $existing_user['id'];
+            
+        } else {
+            debugLog("DB: Creating new user", "DB_USER");
+            
+            // Generate unique access key
+            $access_key = generateSecureAccessKey();
+            debugLog("DB: Generated access_key: $access_key", "DB_USER");
+            
+            // Try to create user with different column variations
+            try {
+                // First try with phone/company columns
+                $stmt = $pdo->prepare("INSERT INTO users (name, email, access_key, phone, company, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())");
+                $stmt->execute([$naam, $email, $access_key, $telefoon, $organisatie]);
+            } catch (PDOException $e) {
+                debugLog("DB: Failed with phone/company, trying telefoon/organisatie", "DB_USER");
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO users (name, email, access_key, telefoon, organisatie, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())");
+                    $stmt->execute([$naam, $email, $access_key, $telefoon, $organisatie]);
+                } catch (PDOException $e2) {
+                    debugLog("DB: Both insert attempts failed, trying minimal", "DB_USER");
+                    // Ultra-minimal insert
+                    $stmt = $pdo->prepare("INSERT INTO users (name, email, access_key, created_at) VALUES (?, ?, ?, NOW())");
+                    $stmt->execute([$naam, $email, $access_key]);
+                }
+            }
+            
+            $user_id = $pdo->lastInsertId();
+            debugLog("DB: New user created - ID: $user_id with access_key: $access_key", "DB_USER");
+            return $user_id;
+        }
+        
+    } catch (PDOException $e) {
+        debugLog("DB ERROR: User creation failed - " . $e->getMessage(), "DB_ERROR");
+        return false;
+    }
+}
+
+function createInterest($pdo, $data) {
+    debugLog("DB: Creating interest record", "DB_INTEREST");
+    
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO interests 
+            (naam, email, telefoon, organisatie, training_type, training_name, opmerkingen, source, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'universal_form', NOW())
+        ");
+        
+        $stmt->execute([
+            $data['naam'],
+            $data['email'], 
+            $data['telefoon'],
+            $data['organisatie'],
+            $data['training_type'],
+            $data['training_name'],
+            $data['opmerkingen']
+        ]);
+        
+        $interest_id = $pdo->lastInsertId();
+        debugLog("DB: Interest created - ID: $interest_id", "DB_INTEREST");
+        return $interest_id;
+        
+    } catch (Exception $e) {
+        debugLog("DB ERROR: Interest creation failed - " . $e->getMessage(), "DB_ERROR");
+        return false;
+    }
+}
+
+// ===== EMAIL FUNCTIONS =====
 
 /**
  * Simple Email Function with Debug
@@ -173,51 +288,12 @@ function sendSimpleEmail($to_email, $to_name, $subject, $message) {
 }
 
 /**
- * Simple Email Content Generator
- */
-/**
- * Simple Email Content Generator v6.3.4 - Inventijn Branded Templates
- * Updated: 2025-06-13 - Martijn's nieuwe Inventijn huisstijl
- */
-function getSimpleEmailContent($type, $data) {
-    debugLog("EMAIL: Generating content for type: $type", "EMAIL_CONTENT");
-    
-    $naam = htmlspecialchars($data['naam']);
-    $training = htmlspecialchars($data['training_name']);
-    $email = htmlspecialchars($data['email']);
-    $organisatie = htmlspecialchars($data['organisatie'] ?? '');
-    
-   // CORRECT - haal course_data uit data array:
-$course_data = $data['course_data'] ?? [];
-$inventijn_template = getInventijnEmailTemplate($naam, $training, $type, $course_data);
-
-    $templates = [
-        'enrollment' => [
-            'subject' => "🎉 Je bent ingeschreven bij $training - Inventijn",
-            'participant' => $inventijn_template,
-            'admin' => "<h2>✅ Nieuwe Inschrijving</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p><p><strong>Email:</strong> $email</p><p><strong>Organisatie:</strong> " . ($organisatie ?: 'Niet opgegeven') . "</p><p><strong>Type:</strong> Directe inschrijving</p>"
-        ],
-        'interest' => [
-            'subject' => "🎯 Interesse geregistreerd voor $training - Inventijn", 
-            'participant' => $inventijn_template,
-            'admin' => "<h2>🎯 Nieuwe Interesse</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p><p><strong>Email:</strong> $email</p><p><strong>Organisatie:</strong> " . ($organisatie ?: 'Niet opgegeven') . "</p><p><strong>Type:</strong> Interesse registratie</p>"
-        ],
-        'incompany' => [
-            'subject' => "🏢 Incompany aanvraag voor $training - Inventijn",
-            'participant' => $inventijn_template,
-            'admin' => "<h2>🏢 Incompany Aanvraag</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p><p><strong>Email:</strong> $email</p><p><strong>Organisatie:</strong> " . ($organisatie ?: 'Niet opgegeven') . "</p><p><strong>Type:</strong> Incompany verzoek</p>"
-        ]
-    ];
-    
-    debugLog("EMAIL: Template found for type: $type", "EMAIL_CONTENT");
-    return $templates[$type] ?? $templates['interest'];
-}
-
-/**
- * Get full Inventijn branded email template v6.3.6
+ * Get full Inventijn branded email template v6.3.9
  * NOW WITH REAL COURSE DATA FOR ENROLLMENTS
  */
 function getInventijnEmailTemplate($naam, $training, $type = 'interest', $course_data = []) {
+    debugLog("EMAIL: Building template for type: $type with course_data: " . json_encode($course_data), "EMAIL_TEMPLATE");
+    
     // Determine content based on type
     $header_emoji = ($type === 'enrollment') ? '🎉' : (($type === 'incompany') ? '🏢' : '🎯');
     $header_text = ($type === 'enrollment') ? 'Je bent ingeschreven!' : (($type === 'incompany') ? 'Incompany aanvraag ontvangen!' : 'Interesse geregistreerd!');
@@ -285,7 +361,6 @@ function getInventijnEmailTemplate($naam, $training, $type = 'interest', $course
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>' . $header_text . ' - Inventijn</title>
-    <!-- CSS same as before -->
     <style>
         :root {
             --inventijn-light-pink: #e3a1e5;
@@ -375,15 +450,49 @@ function getInventijnEmailTemplate($naam, $training, $type = 'interest', $course
 }
 
 /**
+ * Simple Email Content Generator v6.3.9 - Inventijn Branded Templates
+ * Updated: 2025-06-13 - Martijn's nieuwe Inventijn huisstijl
+ */
+function getSimpleEmailContent($type, $data) {
+    debugLog("EMAIL: Generating content for type: $type", "EMAIL_CONTENT");
+    
+    $naam = htmlspecialchars($data['naam']);
+    $training = htmlspecialchars($data['training_name']);
+    $email = htmlspecialchars($data['email']);
+    $organisatie = htmlspecialchars($data['organisatie'] ?? '');
+    
+    // Get course data from data array
+    $course_data = $data['course_data'] ?? [];
+    debugLog("EMAIL: Course data for template: " . json_encode($course_data), "EMAIL_CONTENT");
+    
+    $inventijn_template = getInventijnEmailTemplate($naam, $training, $type, $course_data);
+
+    $templates = [
+        'enrollment' => [
+            'subject' => "🎉 Je bent ingeschreven bij $training - Inventijn",
+            'participant' => $inventijn_template,
+            'admin' => "<h2>✅ Nieuwe Inschrijving</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p><p><strong>Email:</strong> $email</p><p><strong>Organisatie:</strong> " . ($organisatie ?: 'Niet opgegeven') . "</p><p><strong>Type:</strong> Directe inschrijving</p>"
+        ],
+        'interest' => [
+            'subject' => "🎯 Interesse geregistreerd voor $training - Inventijn", 
+            'participant' => $inventijn_template,
+            'admin' => "<h2>🎯 Nieuwe Interesse</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p><p><strong>Email:</strong> $email</p><p><strong>Organisatie:</strong> " . ($organisatie ?: 'Niet opgegeven') . "</p><p><strong>Type:</strong> Interesse registratie</p>"
+        ],
+        'incompany' => [
+            'subject' => "🏢 Incompany aanvraag voor $training - Inventijn",
+            'participant' => $inventijn_template,
+            'admin' => "<h2>🏢 Incompany Aanvraag</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p><p><strong>Email:</strong> $email</p><p><strong>Organisatie:</strong> " . ($organisatie ?: 'Niet opgegeven') . "</p><p><strong>Type:</strong> Incompany verzoek</p>"
+        ]
+    ];
+    
+    debugLog("EMAIL: Template found for type: $type", "EMAIL_CONTENT");
+    return $templates[$type] ?? $templates['interest'];
+}
+
+/**
  * Main Email Sending Function
  */
-$data['course_data'] = $course_data;
-
-// Send confirmation email
-debugLog("MAIN: Calling sendConfirmationEmail with course_data...", "MAIN_EMAIL");
-$email_sent = sendConfirmationEmail($email_type, $data, $result);
- 
- function sendConfirmationEmail($type, $data, $result_id = null) {
+function sendConfirmationEmail($type, $data, $result_id = null) {
     debugLog("EMAIL: sendConfirmationEmail called - Type: $type", "EMAIL_MAIN");
     
     try {
@@ -425,119 +534,6 @@ $email_sent = sendConfirmationEmail($email_type, $data, $result);
     }
 }
 
-// ===== DATABASE FUNCTIONS (same as before, working) =====
-
-function createOrGetUser($pdo, $naam, $email, $telefoon = '', $organisatie = '') {
-    debugLog("DB: Creating/getting user for email: $email", "DB_USER");
-    
-    try {
-        // First check if user exists
-        $stmt = $pdo->prepare("SELECT id, access_key FROM users WHERE email = ?");
-        $stmt->execute([$email]);
-        $existing_user = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($existing_user) {
-            debugLog("DB: User exists, updating - ID: " . $existing_user['id'], "DB_USER");
-            
-            // Ensure access_key exists
-            if (empty($existing_user['access_key'])) {
-                $access_key = generateSecureAccessKey();
-                $stmt = $pdo->prepare("UPDATE users SET access_key = ? WHERE id = ?");
-                $stmt->execute([$access_key, $existing_user['id']]);
-                debugLog("DB: Generated missing access_key for existing user", "DB_USER");
-            }
-            
-            // Try to update with both possible column name variations
-            try {
-                $stmt = $pdo->prepare("UPDATE users SET name = ?, phone = ?, company = ?, updated_at = NOW() WHERE email = ?");
-                $stmt->execute([$naam, $telefoon, $organisatie, $email]);
-            } catch (PDOException $e) {
-                debugLog("DB: Failed with phone/company, trying telefoon/organisatie", "DB_USER");
-                try {
-                    $stmt = $pdo->prepare("UPDATE users SET name = ?, telefoon = ?, organisatie = ?, updated_at = NOW() WHERE email = ?");
-                    $stmt->execute([$naam, $telefoon, $organisatie, $email]);
-                } catch (PDOException $e2) {
-                    debugLog("DB: Both update attempts failed, continuing with basic user", "DB_USER");
-                }
-            }
-            
-            return $existing_user['id'];
-            
-        } else {
-            debugLog("DB: Creating new user", "DB_USER");
-            
-            // Generate unique access key
-            $access_key = generateSecureAccessKey();
-            debugLog("DB: Generated access_key: $access_key", "DB_USER");
-            
-            // Try to create user with different column variations
-            try {
-                // First try with phone/company columns
-                $stmt = $pdo->prepare("INSERT INTO users (name, email, access_key, phone, company, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())");
-                $stmt->execute([$naam, $email, $access_key, $telefoon, $organisatie]);
-            } catch (PDOException $e) {
-                debugLog("DB: Failed with phone/company, trying telefoon/organisatie", "DB_USER");
-                try {
-                    $stmt = $pdo->prepare("INSERT INTO users (name, email, access_key, telefoon, organisatie, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())");
-                    $stmt->execute([$naam, $email, $access_key, $telefoon, $organisatie]);
-                } catch (PDOException $e2) {
-                    debugLog("DB: Both insert attempts failed, trying minimal", "DB_USER");
-                    // Ultra-minimal insert
-                    $stmt = $pdo->prepare("INSERT INTO users (name, email, access_key, created_at) VALUES (?, ?, ?, NOW())");
-                    $stmt->execute([$naam, $email, $access_key]);
-                }
-            }
-            
-            $user_id = $pdo->lastInsertId();
-            debugLog("DB: New user created - ID: $user_id with access_key: $access_key", "DB_USER");
-            return $user_id;
-        }
-        
-    } catch (PDOException $e) {
-        debugLog("DB ERROR: User creation failed - " . $e->getMessage(), "DB_ERROR");
-        return false;
-    }
-}
-
-/**
- * Generate secure access key if function doesn't exist yet
- */
-if (!function_exists('generateSecureAccessKey')) {
-    function generateSecureAccessKey() {
-        return bin2hex(random_bytes(16)); // 32 character hex string
-    }
-}
-
-function createInterest($pdo, $data) {
-    debugLog("DB: Creating interest record", "DB_INTEREST");
-    
-    try {
-        $stmt = $pdo->prepare("
-            INSERT INTO interests 
-            (naam, email, telefoon, organisatie, training_type, training_name, opmerkingen, source, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'universal_form', NOW())
-        ");
-        
-        $stmt->execute([
-            $data['naam'],
-            $data['email'], 
-            $data['telefoon'],
-            $data['organisatie'],
-            $data['training_type'],
-            $data['training_name'],
-            $data['opmerkingen']
-        ]);
-        
-        $interest_id = $pdo->lastInsertId();
-        debugLog("DB: Interest created - ID: $interest_id", "DB_INTEREST");
-        return $interest_id;
-        
-    } catch (Exception $e) {
-        debugLog("DB ERROR: Interest creation failed - " . $e->getMessage(), "DB_ERROR");
-        return false;
-    }
-}
-
 // ===== MAIN PROCESSING =====
 
 try {
@@ -555,7 +551,7 @@ try {
     
     debugLog("MAIN: User created/updated - ID: $user_id", "MAIN_USER");
     
-    // For simplicity, let's just create an interest record for all types for now
+    // Create interest record
     debugLog("MAIN: Creating interest record...", "MAIN_INTEREST");
     $result = createInterest($pdo, $data);
     
@@ -565,29 +561,94 @@ try {
     
     debugLog("MAIN: Interest created - ID: $result", "MAIN_INTEREST");
     
-    // Determine email type
-// ===== IMPROVED EMAIL TYPE DETECTION =====
+    // ===== EMAIL TYPE DETECTION =====
+    debugLog("MAIN: Determining email type - selected_course_id: " . ($data['selected_course_id'] ?? 'none'), "MAIN_EMAIL_TYPE");
 
-// Determine email type based on actual registration action
-debugLog("MAIN: Determining email type - selected_course_id: " . ($data['selected_course_id'] ?? 'none'), "MAIN_EMAIL_TYPE");
+    if ($data['training_type'] === 'incompany') {
+        $email_type = 'incompany';
+        debugLog("MAIN: Email type set to incompany", "MAIN_EMAIL_TYPE");
+    } elseif (!empty($data['selected_course_id']) && $data['selected_course_id'] !== 'other') {
+        // User selected a specific course = direct enrollment
+        $email_type = 'enrollment';
+        debugLog("MAIN: Email type set to enrollment (direct course selection)", "MAIN_EMAIL_TYPE");
+    } else {
+        // No specific course selected = interest registration
+        $email_type = 'interest';
+        debugLog("MAIN: Email type set to interest (no specific course)", "MAIN_EMAIL_TYPE");
+    }
 
-if ($data['training_type'] === 'incompany') {
-    $email_type = 'incompany';
-    debugLog("MAIN: Email type set to incompany", "MAIN_EMAIL_TYPE");
-} elseif (!empty($data['selected_course_id']) && $data['selected_course_id'] !== 'other') {
-    // User selected a specific course = direct enrollment
-    $email_type = 'enrollment';
-    debugLog("MAIN: Email type set to enrollment (direct course selection)", "MAIN_EMAIL_TYPE");
-} else {
-    // No specific course selected = interest registration
-    $email_type = 'interest';
-    debugLog("MAIN: Email type set to interest (no specific course)", "MAIN_EMAIL_TYPE");
-}
-
-debugLog("MAIN: Final email type determined: $email_type", "MAIN_EMAIL_TYPE");
+    debugLog("MAIN: Final email type determined: $email_type", "MAIN_EMAIL_TYPE");
     
-    // Send confirmation email
-    debugLog("MAIN: Calling sendConfirmationEmail...", "MAIN_EMAIL");
+    // ===== FETCH COURSE DATA FOR ENROLLMENTS =====
+    $course_data = [];
+    
+    if ($email_type === 'enrollment' && !empty($data['selected_course_id'])) {
+        debugLog("MAIN: Fetching course data for enrollment - Course ID: " . $data['selected_course_id'], "COURSE_FETCH");
+        
+        try {
+            $stmt = $pdo->prepare("SELECT id, name, course_date, location, time_range, access_start_time FROM courses WHERE id = ? AND active = 1");
+            $stmt->execute([$data['selected_course_id']]);
+            $course = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($course) {
+                debugLog("MAIN: Course found: " . $course['name'], "COURSE_FETCH");
+                
+                // Generate access key for this enrollment
+                $access_key = generateSecureAccessKey();
+                debugLog("MAIN: Generated access key: $access_key", "COURSE_FETCH");
+                
+                // Update user with access key
+                $stmt = $pdo->prepare("UPDATE users SET access_key = ? WHERE id = ?");
+                $stmt->execute([$access_key, $user_id]);
+                debugLog("MAIN: Updated user with access key", "COURSE_FETCH");
+                
+                // Try to enroll user in course (if course_participants table exists)
+                try {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO course_participants (course_id, user_id, enrollment_date, payment_status) 
+                        VALUES (?, ?, NOW(), 'pending')
+                        ON DUPLICATE KEY UPDATE enrollment_date = NOW()
+                    ");
+                    $stmt->execute([$course['id'], $user_id]);
+                    debugLog("MAIN: User enrolled in course", "COURSE_FETCH");
+                } catch (PDOException $e) {
+                    debugLog("MAIN: Course enrollment failed (table might not exist): " . $e->getMessage(), "COURSE_FETCH");
+                    // Continue without enrollment - just send email
+                }
+                
+                // Create login URL
+                $login_url = 'https://inventijn.nl/login.php?access=' . urlencode($access_key);
+                
+                // Format course data for email
+                $course_data = [
+                    'course_name' => $course['name'],
+                    'course_date' => $course['course_date'] ? date('d F Y', strtotime($course['course_date'])) : 'Wordt nog bekendgemaakt',
+                    'course_time' => $course['time_range'] ?: ($course['course_date'] ? date('H:i', strtotime($course['course_date'])) : 'Wordt nog bekendgemaakt'),
+                    'course_location' => $course['location'] ?: 'Wordt nog bekendgemaakt',
+                    'access_key' => $access_key,
+                    'login_url' => $login_url,
+                    'access_start_time' => $course['access_start_time'] ? date('d F Y H:i', strtotime($course['access_start_time'])) : 'De avond voor de cursus'
+                ];
+                
+                debugLog("MAIN: Course data prepared: " . json_encode($course_data), "COURSE_FETCH");
+                
+            } else {
+                debugLog("MAIN: Course not found or inactive, falling back to interest", "COURSE_FETCH");
+                $email_type = 'interest'; // Fallback to interest
+            }
+            
+        } catch (Exception $e) {
+            debugLog("MAIN: Error fetching course data: " . $e->getMessage(), "COURSE_ERROR");
+            $email_type = 'interest'; // Fallback to interest on error
+        }
+    }
+    
+    // Add course data to data array for email template
+    $data['course_data'] = $course_data;
+    debugLog("MAIN: Course data added to email data", "COURSE_FETCH");
+    
+    // Send confirmation email (AFTER course data is prepared)
+    debugLog("MAIN: Calling sendConfirmationEmail with complete data...", "MAIN_EMAIL");
     $email_sent = sendConfirmationEmail($email_type, $data, $result);
     debugLog("MAIN: Email sending completed - Result: " . ($email_sent ? 'SUCCESS' : 'FAILED'), "MAIN_EMAIL");
     
@@ -597,7 +658,7 @@ debugLog("MAIN: Final email type determined: $email_type", "MAIN_EMAIL_TYPE");
     debugLog("MAIN: Transaction committed successfully", "MAIN_COMMIT");
     
     // Send response
-    $response = 'interest_success';
+    $response = ($email_type === 'enrollment') ? 'enrollment_success' : 'interest_success';
     debugLog("MAIN: Sending response: $response", "MAIN_RESPONSE");
     echo $response;
     
