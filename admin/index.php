@@ -640,36 +640,6 @@ $stats = [
         <?php endif; ?>
     </div>
 </div>
-
-<!-- High Priority Interests Panel -->
-<?php if (!empty($recentHighPriorityInterests)): ?>
-<div class="card" style="border-left: 4px solid var(--error);">
-    <div class="card-header" style="background: var(--error); color: var(--text-inverse);">
-        <h3><i class="fas fa-fire"></i> High Priority Interests</h3>
-        <a href="planning.php" class="btn btn-sm" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3);">Manage All</a>
-    </div>
-    <div style="padding: var(--space-6);">
-        <?php foreach ($recentHighPriorityInterests as $interest): ?>
-        <div style="border-bottom: 1px solid var(--border); padding: var(--space-4) 0;">
-            <div style="font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-1);">
-                <?= htmlspecialchars($interest['user_name'] ?: 'Guest User') ?>
-            </div>
-            <div style="font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: var(--space-2);">
-                <i class="fas fa-fire"></i> <?= htmlspecialchars($interest['training_name']) ?> | 
-                <i class="fas fa-users"></i> <?= $interest['participant_count'] ?> participants | 
-                <i class="fas fa-clock"></i> <?= date('d-m H:i', strtotime($interest['created_at'])) ?>
-            </div>
-            <?php if ($interest['availability_comment']): ?>
-                <div style="font-size: var(--font-size-xs); color: var(--text-tertiary); font-style: italic;">
-                    <i class="fas fa-comment"></i> <?= htmlspecialchars(substr($interest['availability_comment'], 0, 100)) ?><?= strlen($interest['availability_comment']) > 100 ? '...' : '' ?>
-                </div>
-            <?php endif; ?>
-        </div>
-        <?php endforeach; ?>
-    </div>
-</div>
-<?php endif; ?>
-
 <!-- System Info Footer -->
 <div style="background: var(--surface); padding: var(--space-6); border-radius: var(--radius); text-align: center; color: var(--text-secondary); font-size: var(--font-size-sm); box-shadow: var(--shadow); margin-top: var(--space-6);">
     <p style="margin-bottom: var(--space-2);">
