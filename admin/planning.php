@@ -32,11 +32,20 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Handle AJAX requests
-    if (isset($_POST['action']) && !empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+    if (isset($_POST['action']) && !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest') {
         header('Content-Type: application/json');
         
         try {
             switch ($_POST['action']) {
+                case 'test_connection':
+                    echo json_encode([
+                        'success' => true, 
+                        'message' => 'Connection test successful',
+                        'timestamp' => date('Y-m-d H:i:s'),
+                        'session_user' => $_SESSION['admin_user'] ?? 'Unknown'
+                    ]);
+                    break;
+                    
                 case 'convert_to_enrollment':
                     $interest_id = intval($_POST['interest_id']);
                     $course_id = intval($_POST['course_id']);
@@ -84,10 +93,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     break;
                     
                 default:
-                    echo json_encode(['success' => false, 'message' => 'Unknown action']);
+                    echo json_encode(['success' => false, 'message' => 'Unknown action: ' . $_POST['action']]);
             }
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
+            echo json_encode(['success' => false, 'message' => 'Server error: ' . $e->getMessage()]);
         }
         exit;
     }
@@ -422,6 +431,9 @@ function getUserDetailsForPlanning($pdo, $user_id) {
             <a href="courses.php" class="btn btn-success">
                 <i class="fas fa-plus"></i> New Course
             </a>
+            <button onclick="testConnection()" class="btn btn-outline btn-sm" title="Test AJAX Connection">
+                <i class="fas fa-wifi"></i> Test
+            </button>
         </div>
     </div>
     <div class="course-essentials">
@@ -731,23 +743,53 @@ let currentInterestId = null;
 
 // Initialize page-specific functionality
 document.addEventListener('DOMContentLoaded', function() {
+    // Check if unified admin functions are available
+    if (typeof showNotification !== 'function') {
+        // Fallback notification function
+        window.showNotification = function(message, type = 'info', duration = 3000) {
+            alert(type.toUpperCase() + ': ' + message);
+        };
+    }
+    
+    if (typeof setButtonLoading !== 'function') {
+        // Fallback button loading function
+        window.setButtonLoading = function(button, loading = true) {
+            if (loading) {
+                button.disabled = true;
+                button.dataset.originalText = button.innerHTML;
+                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            } else {
+                button.disabled = false;
+                button.innerHTML = button.dataset.originalText || button.innerHTML;
+            }
+        };
+    }
+
     // Bulk action enhancement
-    document.querySelector('select[name="bulk_action"]').addEventListener('change', function() {
-        const courseSelect = document.getElementById('bulk-course-select');
-        if (this.value === 'bulk_convert') {
-            courseSelect.style.display = 'inline-block';
-            courseSelect.required = true;
-        } else {
-            courseSelect.style.display = 'none';
-            courseSelect.required = false;
-        }
-    });
+    const bulkActionSelect = document.querySelector('select[name="bulk_action"]');
+    if (bulkActionSelect) {
+        bulkActionSelect.addEventListener('change', function() {
+            const courseSelect = document.getElementById('bulk-course-select');
+            if (courseSelect) {
+                if (this.value === 'bulk_convert') {
+                    courseSelect.style.display = 'inline-block';
+                    courseSelect.required = true;
+                } else {
+                    courseSelect.style.display = 'none';
+                    courseSelect.required = false;
+                }
+            }
+        });
+    }
 
     // Select all functionality
-    document.getElementById('select-all').addEventListener('change', function() {
-        const checkboxes = document.querySelectorAll('.interest-checkbox');
-        checkboxes.forEach(cb => cb.checked = this.checked);
-    });
+    const selectAllCheckbox = document.getElementById('select-all');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.interest-checkbox');
+            checkboxes.forEach(cb => cb.checked = this.checked);
+        });
+    }
     
     // Course option styling
     document.querySelectorAll('.course-option').forEach(option => {
@@ -763,6 +805,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+    
+    console.log('🎯 Planning Dashboard v6.4.0 - JavaScript initialized successfully');
 });
 
 // Enhanced conversion function with unified notifications
@@ -911,16 +955,134 @@ function refreshData() {
     setTimeout(() => location.reload(), 500);
 }
 
+// Test connection function (can be called from browser console)
+window.testConnection = function() {
+    console.log('🧪 Testing AJAX connection...');
+    
+    fetch('planning.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: 'action=test_connection'
+    })
+    .then(response => {
+        console.log('📡 Response status:', response.status);
+        console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+        
+        return response.text();
+    })
+    .then(text => {
+        console.log('📄 Raw response:', text);
+        
+        try {
+            const data = JSON.parse(text);
+            console.log('✅ Parsed JSON:', data);
+            if (typeof showNotification === 'function') {
+                showNotification('Connection test successful!', 'success');
+            } else {
+                alert('Connection test successful!');
+            }
+            return data;
+        } catch (e) {
+            console.error('❌ JSON Parse Error:', e);
+            console.log('📄 Response was not JSON:', text);
+            if (typeof showNotification === 'function') {
+                showNotification('Connection test failed: Invalid JSON response', 'error');
+            } else {
+                alert('Connection test failed: Invalid JSON response');
+            }
+            throw new Error('Invalid JSON response');
+        }
+    })
+    .catch(error => {
+        console.error('🚨 Connection Test Error:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('Connection test failed: ' + error.message, 'error');
+        } else {
+            alert('Connection test failed: ' + error.message);
+        }
+    });
+};
+
+// Debug function for troubleshooting AJAX issues
+function debugAjaxRequest(action, data = {}) {
+    console.log('🔍 Debug AJAX Request:', action, data);
+    
+    const formData = new URLSearchParams();
+    formData.append('action', action);
+    Object.keys(data).forEach(key => {
+        formData.append(key, data[key]);
+    });
+    
+    fetch('planning.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData.toString()
+    })
+    .then(response => {
+        console.log('📡 Response status:', response.status);
+        console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+        
+        return response.text(); // Get as text first to see what we're getting
+    })
+    .then(text => {
+        console.log('📄 Raw response:', text);
+        
+        try {
+            const data = JSON.parse(text);
+            console.log('✅ Parsed JSON:', data);
+            return data;
+        } catch (e) {
+            console.error('❌ JSON Parse Error:', e);
+            console.log('📄 Response was not JSON:', text);
+            throw new Error('Invalid JSON response');
+        }
+    })
+    .catch(error => {
+        console.error('🚨 AJAX Error:', error);
+    });
+}
+
 // Auto-refresh every 3 minutes
 setInterval(refreshData, 180000);
 
-// Generate planning dashboard auto-functions
-generateEditFunction('interest');
-generateResetFunction('interest');
+// Generate planning dashboard auto-functions with error handling
+try {
+    if (typeof generateEditFunction === 'function') {
+        generateEditFunction('interest');
+    }
+    if (typeof generateResetFunction === 'function') {
+        generateResetFunction('interest');
+    }
+} catch (e) {
+    console.warn('⚠️ Auto-generation functions not available:', e.message);
+}
 
 console.log('🎯 Planning Dashboard v6.4.0 - Unified Admin Edition loaded');
 console.log('✅ Using unified admin system components');
 console.log('✅ Enhanced conversion flow ready');
+
+// Add global error handler for uncaught errors
+window.addEventListener('error', function(e) {
+    console.error('🚨 Global Error:', e.error);
+    if (typeof showNotification === 'function') {
+        showNotification('An unexpected error occurred: ' + e.message, 'error');
+    }
+});
+
+// Add unhandled promise rejection handler
+window.addEventListener('unhandledrejection', function(e) {
+    console.error('🚨 Unhandled Promise Rejection:', e.reason);
+    if (typeof showNotification === 'function') {
+        showNotification('Network error: ' + e.reason, 'error');
+    }
+    e.preventDefault();
+});
 </script>
 
 <?php 
