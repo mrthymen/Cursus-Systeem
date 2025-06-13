@@ -1,15 +1,15 @@
 <?php
 /**
- * Cursus Systeem - Course Management v6.3.0
- * Enhanced template management with smart booking integration
- * Features: Template CRUD, Smart booking URLs, Configurable locations
- * Updated: 2025-06-10
+ * Cursus Systeem - Course Management v6.4.0
+ * Modal-based template management with smart course overview
+ * Features: Modal forms, Smart participant display, Enhanced course metrics
+ * Updated: 2025-06-13
  * Changes: 
- * v6.3.0 - Added template management system
- * v6.3.0 - Fixed booking URLs to universal_registration_form.php
- * v6.3.0 - Added configurable location management
- * v6.3.0 - Smart booking URL generation
- * v6.3.0 - Template duplication feature
+ * v6.4.0 - Moved forms to modals for better UX
+ * v6.4.0 - Enhanced course list with date, location, participants
+ * v6.4.0 - Added participant details per course
+ * v6.4.0 - Removed distracting booking URL blocks
+ * v6.4.0 - Added quick action buttons in course rows
  */
 
 session_start();
@@ -89,7 +89,7 @@ if ($current_tab === 'templates') {
         $editing_template = getTemplateById($pdo, $_GET['edit_template']);
     }
 } else {
-    $courses = getCoursesWithStats($pdo);
+    $courses = getCoursesWithParticipants($pdo);
     $templates = getCourseTemplates($pdo);
     $editing_course = null;
     if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
@@ -481,7 +481,7 @@ function getTemplateById($pdo, $id) {
     }
 }
 
-function getCoursesWithStats($pdo) {
+function getCoursesWithParticipants($pdo) {
     try {
         $stmt = $pdo->query("
             SELECT 
@@ -489,11 +489,18 @@ function getCoursesWithStats($pdo) {
                 COUNT(cp.id) as participant_count,
                 SUM(CASE WHEN cp.payment_status = 'paid' THEN 1 ELSE 0 END) as paid_participants,
                 SUM(CASE WHEN cp.payment_status = 'pending' THEN 1 ELSE 0 END) as pending_participants,
-                COALESCE(SUM(CASE WHEN cp.payment_status = 'paid' THEN c.price ELSE 0 END), 0) as course_revenue
+                SUM(CASE WHEN cp.payment_status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_participants,
+                COALESCE(SUM(CASE WHEN cp.payment_status = 'paid' THEN c.price ELSE 0 END), 0) as course_revenue,
+                GROUP_CONCAT(
+                    CASE WHEN cp.payment_status != 'cancelled' THEN
+                        CONCAT(u.name, '|', u.email, '|', u.company, '|', cp.payment_status, '|', DATE_FORMAT(cp.enrollment_date, '%d-%m-%Y'))
+                    END SEPARATOR ';;;'
+                ) as participants_data
             FROM courses c
             LEFT JOIN course_participants cp ON c.id = cp.course_id
+            LEFT JOIN users u ON cp.user_id = u.id
             GROUP BY c.id
-            ORDER BY c.course_date DESC
+            ORDER BY c.course_date DESC, c.created_at DESC
         ");
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
@@ -510,6 +517,68 @@ function getCourseById($pdo, $id) {
         return null;
     }
 }
+
+function parseParticipantsData($participants_data) {
+    if (empty($participants_data)) return [];
+    
+    $participants = [];
+    $entries = explode(';;;', $participants_data);
+    
+    foreach ($entries as $entry) {
+        if (empty($entry)) continue;
+        
+        $parts = explode('|', $entry);
+        if (count($parts) >= 5) {
+            $participants[] = [
+                'name' => $parts[0] ?: 'Onbekend',
+                'email' => $parts[1] ?: '',
+                'company' => $parts[2] ?: '',
+                'payment_status' => $parts[3] ?: 'pending',
+                'enrollment_date' => $parts[4] ?: ''
+            ];
+        }
+    }
+    
+    return $participants;
+}
+
+function formatCourseDate($date) {
+    if (empty($date)) return 'Datum niet gezet';
+    
+    $timestamp = strtotime($date);
+    $now = time();
+    $diff = $timestamp - $now;
+    
+    $formatted = date('d M Y', $timestamp);
+    $day_name = date('l', $timestamp);
+    
+    $day_names = [
+        'Monday' => 'Ma', 'Tuesday' => 'Di', 'Wednesday' => 'Wo',
+        'Thursday' => 'Do', 'Friday' => 'Vr', 'Saturday' => 'Za', 'Sunday' => 'Zo'
+    ];
+    
+    $dutch_day = $day_names[$day_name] ?? $day_name;
+    
+    if ($diff < 0) {
+        $status = 'verlopen';
+        $class = 'expired';
+    } elseif ($diff < 86400 * 7) {
+        $status = 'deze week';
+        $class = 'soon';
+    } elseif ($diff < 86400 * 30) {
+        $status = 'binnenkort';
+        $class = 'upcoming';
+    } else {
+        $status = 'gepland';
+        $class = 'planned';
+    }
+    
+    return [
+        'formatted' => $dutch_day . ' ' . $formatted,
+        'status' => $status,
+        'class' => $class
+    ];
+}
 ?>
 
 <!DOCTYPE html>
@@ -517,10 +586,10 @@ function getCourseById($pdo, $id) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cursus & Template Beheer - Cursus Systeem v6.3.0</title>
+    <title>Cursus & Template Beheer - Cursus Systeem v6.4.0</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        /* Enhanced v6.3 Design System */
+        /* Enhanced v6.4 Design System with Modal Support */
         :root {
             --primary: #2563eb;
             --success: #059669;
@@ -532,6 +601,7 @@ function getCourseById($pdo, $id) {
             --radius: 8px;
             --shadow: 0 1px 3px rgba(0,0,0,0.1);
             --shadow-lg: 0 4px 12px rgba(0,0,0,0.1);
+            --z-modal: 1000;
         }
 
         * {
@@ -597,6 +667,13 @@ function getCourseById($pdo, $id) {
             box-shadow: var(--shadow);
             display: flex;
             gap: 0.5rem;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tab-links {
+            display: flex;
+            gap: 0.5rem;
         }
 
         .tab-button {
@@ -620,6 +697,11 @@ function getCourseById($pdo, $id) {
 
         .tab-button:hover:not(.active) {
             background: #f3f4f6;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
         }
 
         /* Messages */
@@ -663,6 +745,69 @@ function getCourseById($pdo, $id) {
         .card-header h3 {
             color: #1f2937;
             font-size: 1.2rem;
+        }
+
+        /* Modal System */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: var(--z-modal);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: var(--radius);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 90vw;
+            max-height: 90vh;
+            width: 800px;
+            overflow-y: auto;
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+
+        .modal.active .modal-content {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            padding: 1.5rem 1.5rem 1rem;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: between;
+            align-items: center;
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--neutral);
+            cursor: pointer;
+            padding: 0.5rem;
+            margin-left: auto;
+        }
+
+        .modal-close:hover {
+            color: var(--error);
         }
 
         /* Forms */
@@ -719,6 +864,7 @@ function getCourseById($pdo, $id) {
             text-decoration: none;
             cursor: pointer;
             transition: all 0.2s;
+            white-space: nowrap;
         }
 
         .btn-primary {
@@ -758,11 +904,181 @@ function getCourseById($pdo, $id) {
             flex-wrap: wrap;
         }
 
-        /* Template Management */
+        /* Enhanced Course Items */
+        .course-grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .course-item {
+            background: white;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 1.5rem;
+            border-left: 4px solid #e5e7eb;
+            transition: all 0.2s;
+        }
+
+        .course-item:hover {
+            border-left-color: var(--primary);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .course-header {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 1rem;
+            align-items: start;
+            margin-bottom: 1rem;
+        }
+
+        .course-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #1f2937;
+            margin: 0 0 0.5rem 0;
+        }
+
+        .course-subtitle {
+            color: var(--neutral);
+            font-size: 0.9rem;
+        }
+
+        .course-essentials {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            background: #f8fafc;
+            padding: 1rem;
+            border-radius: 6px;
+            margin: 1rem 0;
+        }
+
+        .essential-item {
+            text-align: center;
+        }
+
+        .essential-label {
+            font-size: 11px;
+            color: var(--neutral);
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            letter-spacing: 0.5px;
+        }
+
+        .essential-value {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1f2937;
+        }
+
+        .date-status {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .date-status.soon {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .date-status.upcoming {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .date-status.planned {
+            background: #f3f4f6;
+            color: #6b7280;
+        }
+
+        .date-status.expired {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .participants-preview {
+            background: #f0f9ff;
+            border: 1px solid #93c5fd;
+            border-radius: 6px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+
+        .participants-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+            color: #1e40af;
+        }
+
+        .participant-list {
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .participant-item {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 0.75rem;
+            align-items: center;
+            padding: 0.5rem;
+            background: rgba(255,255,255,0.7);
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .participant-name {
+            font-weight: 500;
+            color: #1f2937;
+        }
+
+        .participant-company {
+            color: var(--neutral);
+            font-size: 0.8rem;
+        }
+
+        .payment-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .payment-badge.paid {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .payment-badge.pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .payment-badge.cancelled {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .no-participants {
+            text-align: center;
+            color: var(--neutral);
+            font-style: italic;
+            padding: 1rem;
+        }
+
+        /* Template Items */
         .template-item {
             border-left: 3px solid #e5e7eb;
             transition: border-color 0.2s;
-            position: relative;
         }
 
         .template-item:hover {
@@ -807,83 +1123,6 @@ function getCourseById($pdo, $id) {
             font-weight: 600;
         }
 
-        /* Course Items */
-        .course-item {
-            border-left: 3px solid #e5e7eb;
-            transition: border-color 0.2s;
-        }
-
-        .course-item:hover {
-            border-left-color: var(--primary);
-        }
-
-        .course-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 1rem;
-        }
-
-        .course-status {
-            background: var(--success);
-            color: white;
-            padding: 0.25rem 0.75rem;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .course-status.inactive {
-            background: var(--neutral);
-        }
-
-        .course-meta {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 1rem;
-            background: #f9fafb;
-            padding: 1rem;
-            border-radius: 6px;
-            margin: 1rem 0;
-        }
-
-        .meta-item {
-            text-align: center;
-        }
-
-        .meta-label {
-            font-size: 12px;
-            color: var(--neutral);
-            text-transform: uppercase;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-        }
-
-        .meta-value {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: #1f2937;
-        }
-
-        /* Booking Section */
-        .booking-section {
-            background: #ecfdf5;
-            border: 1px solid #10b981;
-            border-radius: 8px;
-            padding: 1.5rem;
-            margin: 1rem 0;
-        }
-
-        .booking-url {
-            background: rgba(255,255,255,0.7);
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            font-family: monospace;
-            font-size: 13px;
-            word-break: break-all;
-            margin-top: 0.5rem;
-        }
-
         /* Responsive */
         @media (max-width: 768px) {
             .container {
@@ -899,9 +1138,36 @@ function getCourseById($pdo, $id) {
             }
             
             .template-header, .course-header {
-                flex-direction: column;
+                grid-template-columns: 1fr;
                 gap: 1rem;
             }
+
+            .course-essentials {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .participant-item {
+                grid-template-columns: 1fr;
+                gap: 0.25rem;
+            }
+
+            .modal-content {
+                width: 95vw;
+                margin: 1rem;
+            }
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--neutral);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.3;
         }
     </style>
 </head>
@@ -919,14 +1185,27 @@ function getCourseById($pdo, $id) {
             </div>
         </div>
 
-        <!-- Tab Navigation -->
+        <!-- Tab Navigation with Action Buttons -->
         <div class="tab-navigation">
-            <a href="courses.php?tab=courses" class="tab-button <?= $current_tab === 'courses' ? 'active' : '' ?>">
-                <i class="fas fa-book"></i> Cursussen
-            </a>
-            <a href="courses.php?tab=templates" class="tab-button <?= $current_tab === 'templates' ? 'active' : '' ?>">
-                <i class="fas fa-clone"></i> Templates
-            </a>
+            <div class="tab-links">
+                <a href="courses.php?tab=courses" class="tab-button <?= $current_tab === 'courses' ? 'active' : '' ?>">
+                    <i class="fas fa-book"></i> Cursussen (<?= count($courses ?? []) ?>)
+                </a>
+                <a href="courses.php?tab=templates" class="tab-button <?= $current_tab === 'templates' ? 'active' : '' ?>">
+                    <i class="fas fa-clone"></i> Templates (<?= count($templates ?? []) ?>)
+                </a>
+            </div>
+            <div class="action-buttons">
+                <?php if ($current_tab === 'templates'): ?>
+                    <button onclick="openModal('templateModal')" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Nieuwe Template
+                    </button>
+                <?php else: ?>
+                    <button onclick="openModal('courseModal')" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Nieuwe Cursus
+                    </button>
+                <?php endif; ?>
+            </div>
         </div>
 
         <!-- Messages -->
@@ -940,138 +1219,16 @@ function getCourseById($pdo, $id) {
         <?php if ($current_tab === 'templates'): ?>
             <!-- TEMPLATE MANAGEMENT -->
             
-            <!-- Template Form -->
-            <div class="card">
-                <div class="card-header">
-                    <h3><?= $editing_template ? 'Template Bewerken' : 'Nieuwe Template Aanmaken' ?></h3>
-                    <?php if ($editing_template): ?>
-                        <a href="courses.php?tab=templates" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> Annuleren
-                        </a>
-                    <?php endif; ?>
-                </div>
-                
-                <form method="POST">
-                    <input type="hidden" name="action" value="<?= $editing_template ? 'update_template' : 'create_template' ?>">
-                    <?php if ($editing_template): ?>
-                        <input type="hidden" name="template_id" value="<?= $editing_template['id'] ?>">
-                    <?php endif; ?>
-                    
-                    <div class="form-grid">
-                        <!-- Template Key -->
-                        <div class="form-group">
-                            <label for="template_key">Template Key (Uniek)</label>
-                            <input type="text" id="template_key" name="template_key" 
-                                   value="<?= htmlspecialchars($editing_template['template_key'] ?? '') ?>" 
-                                   placeholder="bijv: ai-booster-intro" required>
-                            <small style="color: #6b7280;">Gebruikt voor identificatie en URL mapping</small>
-                        </div>
-                        
-                        <!-- Display Name -->
-                        <div class="form-group">
-                            <label for="display_name">Weergave Naam</label>
-                            <input type="text" id="display_name" name="display_name" 
-                                   value="<?= htmlspecialchars($editing_template['display_name'] ?? '') ?>" 
-                                   placeholder="bijv: AI Booster Introductie" required>
-                        </div>
-                        
-                        <!-- Category -->
-                        <div class="form-group">
-                            <label for="category">Categorie</label>
-                            <select id="category" name="category" required>
-                                <?php foreach ($template_categories as $key => $label): ?>
-                                    <option value="<?= $key ?>" <?= ($editing_template['category'] ?? '') === $key ? 'selected' : '' ?>>
-                                        <?= $label ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        
-                        <!-- Subcategory -->
-                        <div class="form-group">
-                            <label for="subcategory">Subcategorie</label>
-                            <input type="text" id="subcategory" name="subcategory" 
-                                   value="<?= htmlspecialchars($editing_template['subcategory'] ?? '') ?>" 
-                                   placeholder="bijv: introductie, verdieping">
-                        </div>
-                        
-                        <!-- Default Description -->
-                        <div class="form-group full-width">
-                            <label for="default_description">Standaard Beschrijving</label>
-                            <textarea id="default_description" name="default_description" rows="3" required><?= htmlspecialchars($editing_template['default_description'] ?? '') ?></textarea>
-                        </div>
-                        
-                        <!-- Target Audience -->
-                        <div class="form-group full-width">
-                            <label for="default_target_audience">Standaard Doelgroep</label>
-                            <textarea id="default_target_audience" name="default_target_audience" rows="2"><?= htmlspecialchars($editing_template['default_target_audience'] ?? '') ?></textarea>
-                        </div>
-                        
-                        <!-- Learning Goals -->
-                        <div class="form-group full-width">
-                            <label for="default_learning_goals">Standaard Leerdoelen</label>
-                            <textarea id="default_learning_goals" name="default_learning_goals" rows="2"><?= htmlspecialchars($editing_template['default_learning_goals'] ?? '') ?></textarea>
-                        </div>
-                        
-                        <!-- Materials -->
-                        <div class="form-group full-width">
-                            <label for="default_materials">Standaard Materialen</label>
-                            <textarea id="default_materials" name="default_materials" rows="2"><?= htmlspecialchars($editing_template['default_materials'] ?? '') ?></textarea>
-                        </div>
-                        
-                        <!-- Duration & Participants -->
-                        <div class="form-group">
-                            <label for="default_duration_hours">Standaard Duur (uren)</label>
-                            <input type="number" id="default_duration_hours" name="default_duration_hours" 
-                                   value="<?= $editing_template['default_duration_hours'] ?? '8' ?>" 
-                                   min="1" max="16" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="default_max_participants">Standaard Max Deelnemers</label>
-                            <input type="number" id="default_max_participants" name="default_max_participants" 
-                                   value="<?= $editing_template['default_max_participants'] ?? '20' ?>" 
-                                   min="1" max="100" required>
-                        </div>
-                        
-                        <!-- Booking Form URL -->
-                        <div class="form-group full-width">
-                            <label for="booking_form_url">Booking Formulier URL</label>
-                            <input type="text" id="booking_form_url" name="booking_form_url" 
-                                   value="<?= htmlspecialchars($editing_template['booking_form_url'] ?? '') ?>" 
-                                   placeholder="universal_registration_form.php?type=introductie">
-                            <small style="color: #6b7280;">Relatieve URL naar het inschrijfformulier</small>
-                        </div>
-                        
-                        <!-- Incompany Available -->
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" name="incompany_available" value="1" 
-                                       <?= !empty($editing_template['incompany_available']) ? 'checked' : '' ?>>
-                                Incompany beschikbaar
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div class="btn-group">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save"></i>
-                            <?= $editing_template ? 'Template Bijwerken' : 'Template Aanmaken' ?>
-                        </button>
-                    </div>
-                </form>
-            </div>
-
             <!-- Templates List -->
             <div class="card">
                 <div class="card-header">
-                    <h3>Alle Templates (<?= count($templates) ?>)</h3>
+                    <h3>Alle Templates</h3>
                 </div>
 
                 <?php if (empty($templates)): ?>
-                    <div style="text-align: center; padding: 3rem; color: var(--neutral);">
-                        <i class="fas fa-clone fa-3x" style="margin-bottom: 1rem; opacity: 0.3;"></i>
-                        <p>Nog geen templates aangemaakt. Gebruik het formulier hierboven om je eerste template aan te maken.</p>
+                    <div class="empty-state">
+                        <i class="fas fa-clone"></i>
+                        <p>Nog geen templates aangemaakt.<br>Klik op "Nieuwe Template" om te beginnen.</p>
                     </div>
                 <?php else: ?>
                     <?php foreach ($templates as $template): ?>
@@ -1091,9 +1248,9 @@ function getCourseById($pdo, $id) {
                                     </p>
                                 </div>
                                 <div class="template-actions">
-                                    <a href="courses.php?tab=templates&edit_template=<?= $template['id'] ?>" class="btn btn-primary">
+                                    <button onclick="editTemplate(<?= $template['id'] ?>)" class="btn btn-primary">
                                         <i class="fas fa-edit"></i> Bewerken
-                                    </a>
+                                    </button>
                                     <form method="POST" style="display: inline;">
                                         <input type="hidden" name="action" value="duplicate_template">
                                         <input type="hidden" name="template_id" value="<?= $template['id'] ?>">
@@ -1138,229 +1295,113 @@ function getCourseById($pdo, $id) {
                                     </div>
                                 </div>
                             </div>
-                            
-                            <?php if ($template['booking_form_url']): ?>
-                                <div class="booking-section">
-                                    <h5 style="color: #065f46; margin-bottom: 0.5rem;">🔗 Booking URL</h5>
-                                    <div class="booking-url">
-                                        <?= htmlspecialchars($template['booking_form_url']) ?>
-                                    </div>
-                                </div>
-                            <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                 <?php endif; ?>
             </div>
             
         <?php else: ?>
-            <!-- COURSE MANAGEMENT (existing code enhanced) -->
+            <!-- COURSE MANAGEMENT -->
             
-            <!-- Course Form -->
-            <div class="card">
-                <div class="card-header">
-                    <h3><?= $editing_course ? 'Cursus Bewerken' : 'Nieuwe Cursus Aanmaken' ?></h3>
-                    <?php if ($editing_course): ?>
-                        <a href="courses.php" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> Annuleren
-                        </a>
-                    <?php endif; ?>
-                </div>
-                
-                <form method="POST">
-                    <input type="hidden" name="action" value="<?= $editing_course ? 'update_course' : 'create_course' ?>">
-                    <?php if ($editing_course): ?>
-                        <input type="hidden" name="course_id" value="<?= $editing_course['id'] ?>">
-                    <?php endif; ?>
-                    
-                    <div class="form-grid">
-                        <!-- Template Selection -->
-                        <div class="form-group">
-                            <label for="course_template">Cursus Template</label>
-                            <select id="course_template" name="course_template" onchange="fillTemplateData(this.value)">
-                                <option value="general" <?= ($editing_course['course_template'] ?? 'general') === 'general' ? 'selected' : '' ?>>
-                                    Aangepast (geen template)
-                                </option>
-                                <?php foreach ($templates as $template): ?>
-                                    <option value="<?= $template['template_key'] ?>" 
-                                            <?= ($editing_course['course_template'] ?? '') === $template['template_key'] ? 'selected' : '' ?>
-                                            data-category="<?= $template['category'] ?>"
-                                            data-subcategory="<?= $template['subcategory'] ?>"
-                                            data-description="<?= htmlspecialchars($template['default_description']) ?>"
-                                            data-target="<?= htmlspecialchars($template['default_target_audience']) ?>"
-                                            data-goals="<?= htmlspecialchars($template['default_learning_goals']) ?>"
-                                            data-materials="<?= htmlspecialchars($template['default_materials']) ?>"
-                                            data-duration="<?= $template['default_duration_hours'] ?>"
-                                            data-maxparticipants="<?= $template['default_max_participants'] ?>">
-                                        <?= htmlspecialchars($template['display_name']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <small style="color: var(--neutral); font-size: 12px;">Template selecteren vult automatisch de velden in</small>
-                        </div>
-                        
-                        <!-- Basic Info -->
-                        <div class="form-group">
-                            <label for="course_name">Cursus Naam</label>
-                            <input type="text" id="course_name" name="course_name" 
-                                   value="<?= htmlspecialchars($editing_course['name'] ?? '') ?>" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="instructor">Instructeur</label>
-                            <input type="text" id="instructor" name="instructor" 
-                                   value="<?= htmlspecialchars($editing_course['instructor_name'] ?? 'Martijn Planken') ?>">
-                        </div>
-                        
-                        <!-- Category -->
-                        <div class="form-group">
-                            <label for="category">Categorie</label>
-                            <select id="category" name="category">
-                                <?php foreach ($template_categories as $key => $label): ?>
-                                    <option value="<?= $key ?>" <?= ($editing_course['category'] ?? 'algemeen') === $key ? 'selected' : '' ?>>
-                                        <?= $label ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="subcategory">Subcategorie</label>
-                            <input type="text" id="subcategory" name="subcategory" 
-                                   value="<?= htmlspecialchars($editing_course['subcategory'] ?? '') ?>">
-                        </div>
-                        
-                        <!-- Descriptions -->
-                        <div class="form-group full-width">
-                            <label for="short_description">Korte Beschrijving</label>
-                            <textarea id="short_description" name="short_description" rows="2"><?= htmlspecialchars($editing_course['short_description'] ?? '') ?></textarea>
-                        </div>
-                        
-                        <div class="form-group full-width">
-                            <label for="course_description">Volledige Beschrijving</label>
-                            <textarea id="course_description" name="course_description" rows="4" required><?= htmlspecialchars($editing_course['description'] ?? '') ?></textarea>
-                        </div>
-                        
-                        <div class="form-group full-width">
-                            <label for="target_audience">Doelgroep</label>
-                            <textarea id="target_audience" name="target_audience" rows="2"><?= htmlspecialchars($editing_course['target_audience'] ?? '') ?></textarea>
-                        </div>
-                        
-                        <div class="form-group full-width">
-                            <label for="learning_goals">Leerdoelen</label>
-                            <textarea id="learning_goals" name="learning_goals" rows="3"><?= htmlspecialchars($editing_course['learning_goals'] ?? '') ?></textarea>
-                        </div>
-                        
-                        <div class="form-group full-width">
-                            <label for="materials_included">Inbegrepen Materialen</label>
-                            <textarea id="materials_included" name="materials_included" rows="2"><?= htmlspecialchars($editing_course['materials_included'] ?? '') ?></textarea>
-                        </div>
-                        
-                        <!-- Practical Details -->
-                        <div class="form-group">
-                            <label for="course_date">Datum</label>
-                            <input type="date" id="course_date" name="course_date" 
-                                   value="<?= $editing_course['course_date'] ? date('Y-m-d', strtotime($editing_course['course_date'])) : '' ?>" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="course_time">Tijdstip</label>
-                            <input type="text" id="course_time" name="course_time" 
-                                   placeholder="09:00 - 17:00"
-                                   value="<?= htmlspecialchars($editing_course['time_range'] ?? '') ?>" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="location">Locatie</label>
-                            <select id="location" name="location" required>
-                                <?php foreach ($predefined_locations as $key => $description): ?>
-                                    <option value="<?= $key ?>" 
-                                            <?= ($editing_course['location'] ?? '') === $key ? 'selected' : '' ?>
-                                            data-description="<?= htmlspecialchars($description) ?>">
-                                        <?= htmlspecialchars($key) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <small id="location-description" style="color: #6b7280; font-size: 12px;"></small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="max_participants">Max Deelnemers</label>
-                            <input type="number" id="max_participants" name="max_participants" 
-                                   min="1" value="<?= $editing_course['max_participants'] ?? '20' ?>" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="price">Prijs (€)</label>
-                            <input type="number" id="price" name="price" step="0.01" min="0" 
-                                   value="<?= $editing_course['price'] ?? '' ?>" required>
-                        </div>
-                        
-                        <!-- Incompany Option -->
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" name="incompany_available" value="1" 
-                                       <?= !empty($editing_course['incompany_available']) ? 'checked' : '' ?>>
-                                Incompany beschikbaar
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div class="btn-group">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save"></i>
-                            <?= $editing_course ? 'Cursus Bijwerken' : 'Cursus Aanmaken' ?>
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            <!-- Courses List (existing enhanced code would go here) -->
-            <div class="card">
-                <div class="card-header">
-                    <h3>Alle Cursussen (<?= count($courses) ?>)</h3>
-                </div>
-
+            <!-- Courses List -->
+            <div class="course-grid">
                 <?php if (empty($courses)): ?>
-                    <div style="text-align: center; padding: 3rem; color: var(--neutral);">
-                        <i class="fas fa-book fa-3x" style="margin-bottom: 1rem; opacity: 0.3;"></i>
-                        <p>Nog geen cursussen aangemaakt. Gebruik het formulier hierboven om je eerste cursus aan te maken.</p>
+                    <div class="card">
+                        <div class="empty-state">
+                            <i class="fas fa-book"></i>
+                            <p>Nog geen cursussen aangemaakt.<br>Klik op "Nieuwe Cursus" om te beginnen.</p>
+                        </div>
                     </div>
                 <?php else: ?>
                     <?php foreach ($courses as $course): ?>
+                        <?php 
+                        $date_info = formatCourseDate($course['course_date']);
+                        $participants = parseParticipantsData($course['participants_data']);
+                        $booking_url = $course['booking_url'] ?: generateBookingUrl($course['course_template'], $course['category']);
+                        ?>
                         <div class="card course-item">
                             <div class="course-header">
                                 <div>
-                                    <h2 style="color: #1f2937; margin: 0; font-size: 1.6rem;">
-                                        <?= htmlspecialchars($course['name']) ?>
-                                    </h2>
-                                    <p style="color: #6b7280; margin: 0.5rem 0;">
+                                    <h2 class="course-title"><?= htmlspecialchars($course['name']) ?></h2>
+                                    <div class="course-subtitle">
                                         <strong>Template:</strong> <?= htmlspecialchars($course['course_template']) ?> | 
                                         <strong>Categorie:</strong> <?= $template_categories[$course['category']] ?? $course['category'] ?>
-                                    </p>
+                                    </div>
                                 </div>
-                                <span class="course-status <?= ($course['active'] ?? 0) ? '' : 'inactive' ?>">
-                                    <?= ($course['active'] ?? 0) ? 'Actief' : 'Inactief' ?>
+                                <span class="date-status <?= $date_info['class'] ?>">
+                                    <?= $date_info['status'] ?>
                                 </span>
                             </div>
                             
-                            <!-- Enhanced course details would continue here with the booking URL prominently displayed -->
-                            <div class="booking-section">
-                                <h5 style="color: #065f46; margin-bottom: 0.5rem;">🔗 Inschrijf URL</h5>
-                                <div class="booking-url">
-                                    <?= htmlspecialchars($course['booking_url'] ?: '../universal_registration_form.php?type=general&course=' . $course['id']) ?>
+                            <!-- Course Essentials -->
+                            <div class="course-essentials">
+                                <div class="essential-item">
+                                    <div class="essential-label">Datum</div>
+                                    <div class="essential-value"><?= $date_info['formatted'] ?></div>
                                 </div>
-                                <div style="margin-top: 0.5rem;">
-                                    <a href="<?= htmlspecialchars($course['booking_url'] ?: '../universal_registration_form.php?type=general&course=' . $course['id']) ?>" 
-                                       target="_blank" class="btn btn-success">
-                                        <i class="fas fa-external-link-alt"></i> Test Inschrijfformulier
-                                    </a>
+                                <div class="essential-item">
+                                    <div class="essential-label">Tijd</div>
+                                    <div class="essential-value"><?= htmlspecialchars($course['time_range'] ?: 'Niet gezet') ?></div>
+                                </div>
+                                <div class="essential-item">
+                                    <div class="essential-label">Locatie</div>
+                                    <div class="essential-value"><?= htmlspecialchars($course['location'] ?: 'Niet gezet') ?></div>
+                                </div>
+                                <div class="essential-item">
+                                    <div class="essential-label">Inschrijvingen</div>
+                                    <div class="essential-value"><?= $course['participant_count'] ?>/<?= $course['max_participants'] ?></div>
+                                </div>
+                                <div class="essential-item">
+                                    <div class="essential-label">Betaald</div>
+                                    <div class="essential-value"><?= $course['paid_participants'] ?: 0 ?></div>
+                                </div>
+                                <div class="essential-item">
+                                    <div class="essential-label">Omzet</div>
+                                    <div class="essential-value">€<?= number_format($course['course_revenue'], 0, ',', '.') ?></div>
                                 </div>
                             </div>
                             
-                            <!-- Rest of course item display... -->
+                            <!-- Participants Preview -->
+                            <?php if (!empty($participants)): ?>
+                                <div class="participants-preview">
+                                    <div class="participants-header">
+                                        <span><i class="fas fa-users"></i> Deelnemers (<?= count($participants) ?>)</span>
+                                    </div>
+                                    <div class="participant-list">
+                                        <?php foreach ($participants as $participant): ?>
+                                            <div class="participant-item">
+                                                <div>
+                                                    <div class="participant-name"><?= htmlspecialchars($participant['name']) ?></div>
+                                                    <?php if ($participant['company']): ?>
+                                                        <div class="participant-company"><?= htmlspecialchars($participant['company']) ?></div>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <div style="font-size: 0.8rem; color: var(--neutral);">
+                                                    <?= $participant['enrollment_date'] ?>
+                                                </div>
+                                                <span class="payment-badge <?= $participant['payment_status'] ?>">
+                                                    <?= ucfirst($participant['payment_status']) ?>
+                                                </span>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            <?php else: ?>
+                                <div class="participants-preview">
+                                    <div class="no-participants">
+                                        <i class="fas fa-user-slash"></i> Nog geen inschrijvingen
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                            
+                            <!-- Action Buttons -->
                             <div class="btn-group">
-                                <a href="courses.php?edit=<?= $course['id'] ?>" class="btn btn-primary">
+                                <button onclick="editCourse(<?= $course['id'] ?>)" class="btn btn-primary">
                                     <i class="fas fa-edit"></i> Bewerken
+                                </button>
+                                
+                                <a href="<?= htmlspecialchars($booking_url) ?>" target="_blank" class="btn btn-success">
+                                    <i class="fas fa-external-link-alt"></i> Inschrijven
                                 </a>
                                 
                                 <form method="POST" style="display: inline;">
@@ -1388,8 +1429,328 @@ function getCourseById($pdo, $id) {
             </div>
         <?php endif; ?>
     </div>
+
+    <!-- Template Modal -->
+    <div id="templateModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="templateModalTitle">Nieuwe Template Aanmaken</h3>
+                <button class="modal-close" onclick="closeModal('templateModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form method="POST" id="templateForm">
+                    <input type="hidden" name="action" value="create_template" id="templateAction">
+                    <input type="hidden" name="template_id" id="templateId">
+                    
+                    <div class="form-grid">
+                        <!-- Template Key -->
+                        <div class="form-group">
+                            <label for="template_key">Template Key (Uniek)</label>
+                            <input type="text" id="template_key" name="template_key" 
+                                   placeholder="bijv: ai-booster-intro" required>
+                            <small style="color: #6b7280;">Gebruikt voor identificatie en URL mapping</small>
+                        </div>
+                        
+                        <!-- Display Name -->
+                        <div class="form-group">
+                            <label for="display_name">Weergave Naam</label>
+                            <input type="text" id="display_name" name="display_name" 
+                                   placeholder="bijv: AI Booster Introductie" required>
+                        </div>
+                        
+                        <!-- Category -->
+                        <div class="form-group">
+                            <label for="category">Categorie</label>
+                            <select id="category" name="category" required>
+                                <?php foreach ($template_categories as $key => $label): ?>
+                                    <option value="<?= $key ?>"><?= $label ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <!-- Subcategory -->
+                        <div class="form-group">
+                            <label for="subcategory">Subcategorie</label>
+                            <input type="text" id="subcategory" name="subcategory" 
+                                   placeholder="bijv: introductie, verdieping">
+                        </div>
+                        
+                        <!-- Default Description -->
+                        <div class="form-group full-width">
+                            <label for="default_description">Standaard Beschrijving</label>
+                            <textarea id="default_description" name="default_description" rows="3" required></textarea>
+                        </div>
+                        
+                        <!-- Target Audience -->
+                        <div class="form-group full-width">
+                            <label for="default_target_audience">Standaard Doelgroep</label>
+                            <textarea id="default_target_audience" name="default_target_audience" rows="2"></textarea>
+                        </div>
+                        
+                        <!-- Learning Goals -->
+                        <div class="form-group full-width">
+                            <label for="default_learning_goals">Standaard Leerdoelen</label>
+                            <textarea id="default_learning_goals" name="default_learning_goals" rows="2"></textarea>
+                        </div>
+                        
+                        <!-- Materials -->
+                        <div class="form-group full-width">
+                            <label for="default_materials">Standaard Materialen</label>
+                            <textarea id="default_materials" name="default_materials" rows="2"></textarea>
+                        </div>
+                        
+                        <!-- Duration & Participants -->
+                        <div class="form-group">
+                            <label for="default_duration_hours">Standaard Duur (uren)</label>
+                            <input type="number" id="default_duration_hours" name="default_duration_hours" 
+                                   value="8" min="1" max="16" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="default_max_participants">Standaard Max Deelnemers</label>
+                            <input type="number" id="default_max_participants" name="default_max_participants" 
+                                   value="20" min="1" max="100" required>
+                        </div>
+                        
+                        <!-- Booking Form URL -->
+                        <div class="form-group full-width">
+                            <label for="booking_form_url">Booking Formulier URL</label>
+                            <input type="text" id="booking_form_url" name="booking_form_url" 
+                                   placeholder="universal_registration_form.php?type=introductie">
+                            <small style="color: #6b7280;">Relatieve URL naar het inschrijfformulier</small>
+                        </div>
+                        
+                        <!-- Incompany Available -->
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" name="incompany_available" value="1" id="incompany_available">
+                                Incompany beschikbaar
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i>
+                            <span id="templateSubmitText">Template Aanmaken</span>
+                        </button>
+                        <button type="button" onclick="closeModal('templateModal')" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Annuleren
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Course Modal -->
+    <div id="courseModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="courseModalTitle">Nieuwe Cursus Aanmaken</h3>
+                <button class="modal-close" onclick="closeModal('courseModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form method="POST" id="courseForm">
+                    <input type="hidden" name="action" value="create_course" id="courseAction">
+                    <input type="hidden" name="course_id" id="courseId">
+                    
+                    <div class="form-grid">
+                        <!-- Template Selection -->
+                        <div class="form-group">
+                            <label for="course_template">Cursus Template</label>
+                            <select id="course_template" name="course_template" onchange="fillTemplateData(this.value)">
+                                <option value="general">Aangepast (geen template)</option>
+                                <?php foreach ($templates as $template): ?>
+                                    <option value="<?= $template['template_key'] ?>" 
+                                            data-category="<?= $template['category'] ?>"
+                                            data-subcategory="<?= $template['subcategory'] ?>"
+                                            data-description="<?= htmlspecialchars($template['default_description']) ?>"
+                                            data-target="<?= htmlspecialchars($template['default_target_audience']) ?>"
+                                            data-goals="<?= htmlspecialchars($template['default_learning_goals']) ?>"
+                                            data-materials="<?= htmlspecialchars($template['default_materials']) ?>"
+                                            data-duration="<?= $template['default_duration_hours'] ?>"
+                                            data-maxparticipants="<?= $template['default_max_participants'] ?>">
+                                        <?= htmlspecialchars($template['display_name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small style="color: var(--neutral); font-size: 12px;">Template selecteren vult automatisch de velden in</small>
+                        </div>
+                        
+                        <!-- Basic Info -->
+                        <div class="form-group">
+                            <label for="course_name">Cursus Naam</label>
+                            <input type="text" id="course_name" name="course_name" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="instructor">Instructeur</label>
+                            <input type="text" id="instructor" name="instructor" value="Martijn Planken">
+                        </div>
+                        
+                        <!-- Category -->
+                        <div class="form-group">
+                            <label for="course_category">Categorie</label>
+                            <select id="course_category" name="category">
+                                <?php foreach ($template_categories as $key => $label): ?>
+                                    <option value="<?= $key ?>" <?= $key === 'algemeen' ? 'selected' : '' ?>>
+                                        <?= $label ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="course_subcategory">Subcategorie</label>
+                            <input type="text" id="course_subcategory" name="subcategory">
+                        </div>
+                        
+                        <!-- Descriptions -->
+                        <div class="form-group full-width">
+                            <label for="short_description">Korte Beschrijving</label>
+                            <textarea id="short_description" name="short_description" rows="2"></textarea>
+                        </div>
+                        
+                        <div class="form-group full-width">
+                            <label for="course_description">Volledige Beschrijving</label>
+                            <textarea id="course_description" name="course_description" rows="4" required></textarea>
+                        </div>
+                        
+                        <div class="form-group full-width">
+                            <label for="target_audience">Doelgroep</label>
+                            <textarea id="target_audience" name="target_audience" rows="2"></textarea>
+                        </div>
+                        
+                        <div class="form-group full-width">
+                            <label for="learning_goals">Leerdoelen</label>
+                            <textarea id="learning_goals" name="learning_goals" rows="3"></textarea>
+                        </div>
+                        
+                        <div class="form-group full-width">
+                            <label for="materials_included">Inbegrepen Materialen</label>
+                            <textarea id="materials_included" name="materials_included" rows="2"></textarea>
+                        </div>
+                        
+                        <!-- Practical Details -->
+                        <div class="form-group">
+                            <label for="course_date">Datum</label>
+                            <input type="date" id="course_date" name="course_date" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="course_time">Tijdstip</label>
+                            <input type="text" id="course_time" name="course_time" 
+                                   placeholder="09:00 - 17:00" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="location">Locatie</label>
+                            <select id="location" name="location" required>
+                                <?php foreach ($predefined_locations as $key => $description): ?>
+                                    <option value="<?= $key ?>" data-description="<?= htmlspecialchars($description) ?>">
+                                        <?= htmlspecialchars($key) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small id="location-description" style="color: #6b7280; font-size: 12px;"></small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="max_participants">Max Deelnemers</label>
+                            <input type="number" id="max_participants" name="max_participants" 
+                                   min="1" value="20" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="price">Prijs (€)</label>
+                            <input type="number" id="price" name="price" step="0.01" min="0" required>
+                        </div>
+                        
+                        <!-- Incompany Option -->
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" name="incompany_available" value="1" id="course_incompany_available">
+                                Incompany beschikbaar
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i>
+                            <span id="courseSubmitText">Cursus Aanmaken</span>
+                        </button>
+                        <button type="button" onclick="closeModal('courseModal')" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Annuleren
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
     
     <script>
+    // Modal System
+    function openModal(modalId) {
+        const modal = document.getElementById(modalId);
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal(modalId) {
+        const modal = document.getElementById(modalId);
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+        
+        // Reset forms
+        if (modalId === 'templateModal') {
+            resetTemplateForm();
+        } else if (modalId === 'courseModal') {
+            resetCourseForm();
+        }
+    }
+
+    // Close modal when clicking outside
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('modal')) {
+            const modalId = e.target.id;
+            closeModal(modalId);
+        }
+    });
+
+    // Template Functions
+    function resetTemplateForm() {
+        document.getElementById('templateForm').reset();
+        document.getElementById('templateAction').value = 'create_template';
+        document.getElementById('templateId').value = '';
+        document.getElementById('templateModalTitle').textContent = 'Nieuwe Template Aanmaken';
+        document.getElementById('templateSubmitText').textContent = 'Template Aanmaken';
+    }
+
+    function editTemplate(templateId) {
+        // This would normally fetch template data via AJAX
+        // For now, redirect to edit page
+        window.location.href = 'courses.php?tab=templates&edit_template=' + templateId;
+    }
+
+    // Course Functions
+    function resetCourseForm() {
+        document.getElementById('courseForm').reset();
+        document.getElementById('courseAction').value = 'create_course';
+        document.getElementById('courseId').value = '';
+        document.getElementById('courseModalTitle').textContent = 'Nieuwe Cursus Aanmaken';
+        document.getElementById('courseSubmitText').textContent = 'Cursus Aanmaken';
+        document.getElementById('instructor').value = 'Martijn Planken';
+        updateLocationDescription();
+    }
+
+    function editCourse(courseId) {
+        // This would normally fetch course data via AJAX
+        // For now, redirect to edit page
+        window.location.href = 'courses.php?edit=' + courseId;
+    }
+
     // Enhanced template auto-fill functionality
     function fillTemplateData(templateKey) {
         if (templateKey === 'general') return;
@@ -1399,8 +1760,8 @@ function getCourseById($pdo, $id) {
         
         // Auto-fill fields from template data
         const fields = {
-            category: option.dataset.category || '',
-            subcategory: option.dataset.subcategory || '',
+            course_category: option.dataset.category || '',
+            course_subcategory: option.dataset.subcategory || '',
             course_description: option.dataset.description || '',
             short_description: option.dataset.description || '',
             target_audience: option.dataset.target || '',
@@ -1421,19 +1782,42 @@ function getCourseById($pdo, $id) {
     }
     
     // Location description update
-    document.addEventListener('DOMContentLoaded', function() {
+    function updateLocationDescription() {
         const locationSelect = document.getElementById('location');
         const locationDescription = document.getElementById('location-description');
         
         if (locationSelect && locationDescription) {
-            function updateLocationDescription() {
-                const selectedOption = locationSelect.options[locationSelect.selectedIndex];
-                const description = selectedOption.dataset.description || '';
-                locationDescription.textContent = description;
-            }
-            
+            const selectedOption = locationSelect.options[locationSelect.selectedIndex];
+            const description = selectedOption.dataset.description || '';
+            locationDescription.textContent = description;
+        }
+    }
+
+    // Event listeners
+    document.addEventListener('DOMContentLoaded', function() {
+        const locationSelect = document.getElementById('location');
+        if (locationSelect) {
             locationSelect.addEventListener('change', updateLocationDescription);
             updateLocationDescription(); // Initial call
+        }
+
+        // Auto-generate template key from display name
+        const displayNameField = document.getElementById('display_name');
+        const templateKeyField = document.getElementById('template_key');
+        
+        if (displayNameField && templateKeyField) {
+            displayNameField.addEventListener('input', function() {
+                if (!templateKeyField.value) { // Only auto-generate if field is empty
+                    const key = this.value
+                        .toLowerCase()
+                        .replace(/[^a-z0-9\s-]/g, '')
+                        .replace(/\s+/g, '-')
+                        .replace(/-+/g, '-')
+                        .replace(/^-|-$/g, '');
+                        
+                    templateKeyField.value = key;
+                }
+            });
         }
     });
     
@@ -1441,7 +1825,7 @@ function getCourseById($pdo, $id) {
     function showNotification(message, type = 'info') {
         const notification = document.createElement('div');
         notification.style.cssText = `
-            position: fixed; top: 20px; right: 20px; z-index: 1000;
+            position: fixed; top: 20px; right: 20px; z-index: 1100;
             padding: 1rem 1.5rem; border-radius: 8px; color: white;
             background: ${type === 'success' ? '#059669' : type === 'error' ? '#dc2626' : '#2563eb'};
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -1457,23 +1841,25 @@ function getCourseById($pdo, $id) {
             setTimeout(() => notification.remove(), 300);
         }, 3000);
     }
-    
-    // Auto-generate template key from display name
-    document.addEventListener('DOMContentLoaded', function() {
-        const displayNameField = document.getElementById('display_name');
-        const templateKeyField = document.getElementById('template_key');
-        
-        if (displayNameField && templateKeyField && !templateKeyField.value) {
-            displayNameField.addEventListener('input', function() {
-                const key = this.value
-                    .toLowerCase()
-                    .replace(/[^a-z0-9\s-]/g, '')
-                    .replace(/\s+/g, '-')
-                    .replace(/-+/g, '-')
-                    .replace(/^-|-$/g, '');
-                    
-                templateKeyField.value = key;
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Escape to close modals
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.modal.active').forEach(modal => {
+                closeModal(modal.id);
             });
+        }
+        
+        // Ctrl+N for new course/template
+        if (e.ctrlKey && e.key === 'n') {
+            e.preventDefault();
+            const currentTab = '<?= $current_tab ?>';
+            if (currentTab === 'templates') {
+                openModal('templateModal');
+            } else {
+                openModal('courseModal');
+            }
         }
     });
     </script>
