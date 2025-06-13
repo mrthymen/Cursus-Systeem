@@ -553,9 +553,9 @@ function getUserDetailsForPlanning($pdo, $user_id) {
         </div>
         
         <!-- Interest Records with Enhanced Information -->
-        <div style="padding: 0 1rem 1rem;">
+        <div style="padding: 0 1rem 1rem; display: grid; gap: 1.5rem;">
             <?php foreach ($recentInterest as $interest): ?>
-            <div class="interest-item course-item <?= $interest['priority'] === 'high' ? 'high-priority' : '' ?>" style="position: relative;">
+            <div class="interest-item course-item <?= $interest['priority'] === 'high' ? 'high-priority' : '' ?>" style="position: relative; margin-bottom: 0;">
                 
                 <?php if ($interest['priority'] === 'high'): ?>
                 <div style="position: absolute; top: 1rem; right: 1rem; background: var(--error); color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
@@ -564,10 +564,10 @@ function getUserDetailsForPlanning($pdo, $user_id) {
                 <?php endif; ?>
                 
                 <div class="course-header" style="grid-template-columns: auto 1fr auto; gap: 1rem; align-items: start;">
-                    <input type="checkbox" name="selected_interests[]" value="<?= $interest['id'] ?>" class="interest-checkbox">
+                    <input type="checkbox" name="selected_interests[]" value="<?= $interest['id'] ?>" class="interest-checkbox" style="margin-top: 0.25rem;">
                     
                     <div style="min-width: 0;">
-                        <div class="course-title">
+                        <div class="course-title" style="margin-bottom: 0.75rem;">
                             <?= htmlspecialchars($interest['display_name']) ?>
                             <?php if ($interest['user_course_count'] > 0): ?>
                                 <span class="user-badge" style="background: var(--success); color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; margin-left: 0.5rem;">
@@ -581,11 +581,11 @@ function getUserDetailsForPlanning($pdo, $user_id) {
                             <?php endif; ?>
                         </div>
                         
-                        <div style="background: var(--primary); color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; display: inline-block; margin-bottom: 0.5rem;">
+                        <div style="background: var(--primary); color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; display: inline-block; margin-bottom: 0.75rem;">
                             <?= htmlspecialchars($interest['training_name']) ?>
                         </div>
                         
-                        <div class="course-subtitle">
+                        <div class="course-subtitle" style="margin-bottom: 0.75rem;">
                             📧 <?= htmlspecialchars($interest['user_email'] ?: 'No email') ?> |
                             🏢 <?= htmlspecialchars($interest['company'] ?: 'No company') ?> |
                             👥 <?= $interest['participant_count'] ?> participant(s) |
@@ -596,19 +596,19 @@ function getUserDetailsForPlanning($pdo, $user_id) {
                         </div>
                         
                         <?php if ($interest['availability_comment']): ?>
-                        <div style="background: var(--surface-hover); padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; font-size: 0.875rem; border-left: 3px solid var(--neutral);">
+                        <div style="background: var(--surface-hover); padding: 0.75rem; border-radius: 6px; margin-top: 0.75rem; font-size: 0.875rem; border-left: 3px solid var(--neutral);">
                             💬 <?= htmlspecialchars($interest['availability_comment']) ?>
                         </div>
                         <?php endif; ?>
                         
                         <?php if ($interest['admin_notes']): ?>
-                        <div style="background: #fef3c7; padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; font-size: 0.875rem; border-left: 3px solid var(--warning);">
+                        <div style="background: #fef3c7; padding: 0.75rem; border-radius: 6px; margin-top: 0.75rem; font-size: 0.875rem; border-left: 3px solid var(--warning);">
                             📝 <?= htmlspecialchars($interest['admin_notes']) ?>
                         </div>
                         <?php endif; ?>
                     </div>
                     
-                    <div class="btn-group" style="flex-direction: column; margin: 0;">
+                    <div class="btn-group" style="flex-direction: column; margin: 0; gap: 0.5rem;">
                         <button type="button" onclick="toggleConversion(<?= $interest['id'] ?>)" class="btn btn-success btn-sm">
                             <i class="fas fa-exchange-alt"></i> Convert
                         </button>
@@ -627,16 +627,16 @@ function getUserDetailsForPlanning($pdo, $user_id) {
                 </div>
                 
                 <!-- Enhanced Conversion Section -->
-                <div id="conversion-<?= $interest['id'] ?>" class="conversion-section" style="display: none; background: #f0f9ff; border: 1px solid var(--primary); border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+                <div id="conversion-<?= $interest['id'] ?>" class="conversion-section" style="display: none; background: #f0f9ff; border: 1px solid var(--primary); border-radius: 8px; padding: 1.5rem; margin-top: 1.5rem;">
                     <h4 style="color: var(--primary); margin-bottom: 1rem;">
                         <i class="fas fa-exchange-alt"></i> Convert to Course Enrollment
                     </h4>
                     <p style="margin-bottom: 1rem; color: var(--text-secondary);">Select a course to enroll this participant:</p>
                     
-                    <div style="display: grid; gap: 0.5rem;">
+                    <div style="display: grid; gap: 0.75rem;">
                         <?php foreach ($plannedCourses as $course): ?>
                         <div class="course-option" onclick="selectCourse(<?= $interest['id'] ?>, <?= $course['id'] ?>)" data-course-id="<?= $course['id'] ?>" 
-                             style="background: white; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; cursor: pointer; transition: all 0.2s;">
+                             style="background: white; border: 1px solid var(--border); border-radius: 6px; padding: 1rem; cursor: pointer; transition: all 0.2s;">
                             <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: center;">
                                 <div>
                                     <strong style="color: var(--text-primary);"><?= htmlspecialchars($course['name']) ?></strong><br>
@@ -663,7 +663,7 @@ function getUserDetailsForPlanning($pdo, $user_id) {
                         <?php endforeach; ?>
                     </div>
                     
-                    <div class="btn-group" style="margin-top: 1rem;">
+                    <div class="btn-group" style="margin-top: 1.5rem;">
                         <button type="button" onclick="executeConversion(<?= $interest['id'] ?>)" class="btn btn-success" id="convert-btn-<?= $interest['id'] ?>" disabled>
                             <i class="fas fa-check"></i> Confirm Conversion
                         </button>
