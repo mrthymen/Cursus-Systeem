@@ -386,15 +386,10 @@ function getUserById($pdo, $id) {
         </div>
     </div>
 
-    <!-- Users Table -->
-    <div class="card">
-        <div class="card-header">
-            <h3>Gebruikerslijst</h3>
-            <span class="badge"><?= number_format($totalUsers) ?> gebruikers</span>
-        </div>
-        
-        <div class="table-container">
-            <?php if (empty($users)): ?>
+    <!-- Users Grid - Rich Card Layout inspired by courses.php -->
+    <div class="users-grid">
+        <?php if (empty($users)): ?>
+            <div class="card">
                 <div class="empty-state">
                     <div class="empty-icon">👥</div>
                     <h3>Geen gebruikers gevonden</h3>
@@ -403,88 +398,180 @@ function getUserById($pdo, $id) {
                         <i class="fas fa-plus"></i> Eerste Gebruiker Aanmaken
                     </button>
                 </div>
-            <?php else: ?>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Gebruiker</th>
-                            <th>Contact</th>
-                            <th>Cursussen</th>
-                            <th>Status</th>
-                            <th>Aangemaakt</th>
-                            <th>Acties</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($users as $user): ?>
-                        <tr>
-                            <td>
-                                <div class="user-info">
-                                    <div class="user-name"><?= htmlspecialchars($user['name']) ?></div>
-                                    <div class="user-email"><?= htmlspecialchars($user['email']) ?></div>
-                                    <?php if ($user['company']): ?>
-                                        <div class="user-company"><?= htmlspecialchars($user['company']) ?></div>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                            <td>
-                                <?php if ($user['phone']): ?>
-                                    <div class="contact-item">
-                                        <i class="fas fa-phone"></i> <?= htmlspecialchars($user['phone']) ?>
-                                    </div>
+            </div>
+        <?php else: ?>
+            <?php foreach ($users as $user): ?>
+                <?php
+                // Calculate user insights
+                $user_age_days = $user['created_at'] ? floor((time() - strtotime($user['created_at'])) / 86400) : 0;
+                $is_new_user = $user_age_days <= 7;
+                $is_premium_user = ($user['paid_courses'] ?? 0) >= 2;
+                $total_value = ($user['paid_courses'] ?? 0) * 497; // Assuming average course price
+                
+                // User activity status
+                $activity_status = 'quiet';
+                $activity_label = 'Rustig';
+                if ($user['course_count'] >= 3) {
+                    $activity_status = 'active';
+                    $activity_label = 'Actief';
+                } elseif ($user['course_count'] >= 1) {
+                    $activity_status = 'engaged';
+                    $activity_label = 'Betrokken';
+                }
+                ?>
+                
+                <div class="card user-item">
+                    <div class="user-header">
+                        <div class="user-main-info">
+                            <h2 class="user-title"><?= htmlspecialchars($user['name']) ?></h2>
+                            <div class="user-subtitle">
+                                <strong>Email:</strong> <?= htmlspecialchars($user['email']) ?>
+                                <?php if ($user['company']): ?>
+                                    | <strong>Bedrijf:</strong> <?= htmlspecialchars($user['company']) ?>
                                 <?php endif; ?>
-                                <div class="access-key">
-                                    <i class="fas fa-key"></i> <?= substr($user['access_key'], 0, 8) ?>...
-                                </div>
-                            </td>
-                            <td>
-                                <?php if ($user['course_count'] > 0): ?>
-                                    <div class="course-summary">
-                                        <span class="course-badge">
-                                            📚 <?= $user['course_count'] ?> cursussen
-                                        </span>
-                                        <?php if ($user['paid_courses'] > 0): ?>
-                                            <span class="course-badge paid">
-                                                💰 <?= $user['paid_courses'] ?> betaald
-                                            </span>
-                                        <?php endif; ?>
-                                    </div>
-                                    <?php if ($user['course_names']): ?>
-                                        <div class="course-list">
-                                            <?= htmlspecialchars(strlen($user['course_names']) > 50 ? substr($user['course_names'], 0, 50) . '...' : $user['course_names']) ?>
+                            </div>
+                        </div>
+                        <div class="user-status-badges">
+                            <?php if ($is_new_user): ?>
+                                <span class="status-badge new-user">NIEUW</span>
+                            <?php endif; ?>
+                            <?php if ($is_premium_user): ?>
+                                <span class="status-badge premium">PREMIUM</span>
+                            <?php endif; ?>
+                            <span class="status-badge <?= $user['active'] ? 'active' : 'inactive' ?>">
+                                <?= $user['active'] ? 'ACTIEF' : 'INACTIEF' ?>
+                            </span>
+                            <span class="activity-badge <?= $activity_status ?>"><?= $activity_label ?></span>
+                        </div>
+                    </div>
+                    
+                    <!-- User Essentials -->
+                    <div class="user-essentials">
+                        <div class="essential-item">
+                            <div class="essential-label">Lid sinds</div>
+                            <div class="essential-value">
+                                <?= date('d M Y', strtotime($user['created_at'])) ?>
+                                <small>(<?= $user_age_days ?> dagen)</small>
+                            </div>
+                        </div>
+                        <div class="essential-item">
+                            <div class="essential-label">Contact</div>
+                            <div class="essential-value">
+                                <?php if ($user['phone']): ?>
+                                    📞 <?= htmlspecialchars($user['phone']) ?><br>
+                                <?php endif; ?>
+                                🔑 <?= substr($user['access_key'], 0, 8) ?>...
+                            </div>
+                        </div>
+                        <div class="essential-item">
+                            <div class="essential-label">Cursussen</div>
+                            <div class="essential-value">
+                                <?= $user['course_count'] ?? 0 ?> inschrijvingen
+                                <small>(<?= $user['paid_courses'] ?? 0 ?> betaald)</small>
+                            </div>
+                        </div>
+                        <div class="essential-item">
+                            <div class="essential-label">Waarde</div>
+                            <div class="essential-value">€<?= number_format($total_value, 0, ',', '.') ?></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Course Participation Preview -->
+                    <?php if ($user['course_count'] > 0): ?>
+                        <div class="courses-preview">
+                            <div class="courses-header">
+                                <span><i class="fas fa-graduation-cap"></i> Cursus Participatie</span>
+                                <span class="participation-summary">
+                                    <?= $user['paid_courses'] ?? 0 ?>/<?= $user['course_count'] ?? 0 ?> betaald
+                                </span>
+                            </div>
+                            <div class="course-participation">
+                                <?php if ($user['course_names']): ?>
+                                    <?php 
+                                    $course_list = explode(', ', $user['course_names']);
+                                    $display_courses = array_slice($course_list, 0, 3);
+                                    ?>
+                                    <?php foreach ($display_courses as $course_name): ?>
+                                        <div class="course-chip">
+                                            <span class="course-name"><?= htmlspecialchars($course_name) ?></span>
+                                        </div>
+                                    <?php endforeach; ?>
+                                    <?php if (count($course_list) > 3): ?>
+                                        <div class="course-chip more">
+                                            +<?= count($course_list) - 3 ?> meer
                                         </div>
                                     <?php endif; ?>
                                 <?php else: ?>
-                                    <span class="text-muted">Geen cursussen</span>
+                                    <div class="no-courses">Geen specifieke cursussen gevonden</div>
                                 <?php endif; ?>
-                            </td>
-                            <td>
-                                <span class="status-badge <?= $user['active'] ? 'status-active' : 'status-inactive' ?>">
-                                    <?= $user['active'] ? '✅ Actief' : '❌ Inactief' ?>
-                                </span>
-                            </td>
-                            <td>
-                                <?= date('d-m-Y', strtotime($user['created_at'])) ?>
-                            </td>
-                            <td>
-                                <div class="btn-group">
-                                    <button onclick="editUser(<?= $user['id'] ?>)" class="btn btn-sm btn-primary" title="Bewerken">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    <button onclick="assignCourses(<?= $user['id'] ?>)" class="btn btn-sm btn-warning" title="Cursussen toekennen">
-                                        <i class="fas fa-graduation-cap"></i>
-                                    </button>
-                                    <button onclick="deleteUser(<?= $user['id'] ?>)" class="btn btn-sm btn-danger" title="Deactiveren">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
+                            </div>
+                            
+                            <!-- Payment Status Overview -->
+                            <div class="payment-overview">
+                                <div class="payment-stat">
+                                    <span class="payment-label">Betaald:</span>
+                                    <span class="payment-count paid"><?= $user['paid_courses'] ?? 0 ?></span>
                                 </div>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php endif; ?>
-        </div>
+                                <div class="payment-stat">
+                                    <span class="payment-label">Wachtend:</span>
+                                    <span class="payment-count pending">
+                                        <?= max(0, ($user['course_count'] ?? 0) - ($user['paid_courses'] ?? 0)) ?>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    <?php else: ?>
+                        <div class="courses-preview">
+                            <div class="no-participation">
+                                <i class="fas fa-user-graduate"></i>
+                                <span>Nog geen cursus participatie</span>
+                                <button onclick="assignCourses(<?= $user['id'] ?>)" class="btn btn-sm btn-primary">
+                                    Eerste Cursus Toekennen
+                                </button>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <!-- User Notes (if any) -->
+                    <?php if (!empty($user['notes'])): ?>
+                        <div class="user-notes">
+                            <div class="notes-header">
+                                <i class="fas fa-sticky-note"></i> Notities
+                            </div>
+                            <div class="notes-content">
+                                <?= nl2br(htmlspecialchars($user['notes'])) ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <!-- Action Buttons -->
+                    <div class="user-actions">
+                        <button onclick="editUser(<?= $user['id'] ?>)" class="btn btn-primary">
+                            <i class="fas fa-edit"></i> Bewerken
+                        </button>
+                        
+                        <button onclick="assignCourses(<?= $user['id'] ?>)" class="btn btn-success">
+                            <i class="fas fa-graduation-cap"></i> Cursussen
+                        </button>
+                        
+                        <button onclick="viewUserDetails(<?= $user['id'] ?>)" class="btn btn-info">
+                            <i class="fas fa-eye"></i> Details
+                        </button>
+                        
+                        <?php if ($user['active']): ?>
+                            <button onclick="deleteUser(<?= $user['id'] ?>)" class="btn btn-warning">
+                                <i class="fas fa-pause"></i> Deactiveren
+                            </button>
+                        <?php else: ?>
+                            <button onclick="reactivateUser(<?= $user['id'] ?>)" class="btn btn-success">
+                                <i class="fas fa-play"></i> Activeren
+                            </button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
         
         <!-- Pagination -->
         <?php if ($totalPages > 1): ?>
@@ -768,6 +855,33 @@ function showBulkImportModal() {
     showNotification('📋 Bulk import functionaliteit komt binnenkort! Deze feature zal CSV import ondersteunen voor grote aantallen gebruikers.', 'info');
 }
 
+// View user details function
+function viewUserDetails(userId) {
+    // For now, redirect to edit modal with read-only view
+    editUser(userId);
+    
+    // Future enhancement: Create dedicated details modal
+    showNotification('Gebruiker details geladen in bewerk modus', 'info');
+}
+
+// Reactivate user function
+function reactivateUser(userId) {
+    if (!confirm('Weet je zeker dat je deze gebruiker wilt reactiveren?')) {
+        return;
+    }
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.innerHTML = `
+        <input type="hidden" name="action" value="update_user">
+        <input type="hidden" name="user_id" value="${userId}">
+        <input type="hidden" name="active" value="1">
+        <input type="hidden" name="quick_update" value="1">
+    `;
+    document.body.appendChild(form);
+    form.submit();
+}
+
 // Test AJAX connection
 function testAjax() {
     fetchData('?ajax=1&action=test')
@@ -783,60 +897,289 @@ function testAjax() {
 </script>
 
 <style>
-/* Page-specific styles */
-.user-info .user-name {
-    font-weight: 600;
-    color: var(--primary);
-    margin-bottom: 0.25rem;
+/* Rich User Card Layout - Inspired by courses.php */
+.users-grid {
+    display: grid;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
 }
 
-.user-info .user-email {
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-}
-
-.user-info .user-company {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-    font-style: italic;
-}
-
-.contact-item {
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin-bottom: 0.25rem;
-}
-
-.access-key {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-    font-family: monospace;
-}
-
-.course-summary {
-    margin-bottom: 0.5rem;
-}
-
-.course-badge {
-    background: var(--neutral-light);
-    color: var(--primary);
-    padding: 0.25rem 0.5rem;
+.user-item {
+    background: white;
     border-radius: 12px;
-    font-size: 0.75rem;
-    margin: 0.125rem;
-    display: inline-block;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.course-badge.paid {
+.user-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+}
+
+.user-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.user-main-info {
+    flex: 1;
+}
+
+.user-title {
+    color: var(--primary);
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    line-height: 1.2;
+}
+
+.user-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.user-status-badges {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.status-badge.new-user {
+    background: linear-gradient(135deg, var(--warning), #f59e0b);
+    color: white;
+    animation: pulse 2s infinite;
+}
+
+.status-badge.premium {
+    background: linear-gradient(135deg, var(--inventijn-accent), var(--inventijn-purple));
+    color: white;
+}
+
+.status-badge.active {
     background: var(--success-light);
     color: var(--success);
 }
 
-.course-list {
-    color: var(--text-secondary);
-    font-size: 0.8rem;
+.status-badge.inactive {
+    background: var(--danger-light);
+    color: var(--danger);
 }
 
+.activity-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.activity-badge.active {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.activity-badge.engaged {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.activity-badge.quiet {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.user-essentials {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    padding: 1.5rem;
+    background: var(--neutral-light);
+    border-bottom: 1px solid var(--border);
+}
+
+.essential-item {
+    text-align: center;
+}
+
+.essential-label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+}
+
+.essential-value {
+    color: var(--primary);
+    font-weight: 600;
+    font-size: 0.9rem;
+    line-height: 1.3;
+}
+
+.essential-value small {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 400;
+    margin-top: 0.25rem;
+}
+
+.courses-preview {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.courses-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.participation-summary {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.course-participation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.course-chip {
+    background: var(--neutral-light);
+    color: var(--primary);
+    padding: 0.375rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+}
+
+.course-chip.more {
+    background: var(--primary-light);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.course-name {
+    display: block;
+}
+
+.no-courses {
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 1rem;
+    text-align: center;
+    background: var(--neutral-light);
+    border-radius: 8px;
+}
+
+.payment-overview {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+}
+
+.payment-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.payment-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.payment-count {
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    min-width: 24px;
+    text-align: center;
+}
+
+.payment-count.paid {
+    background: var(--success-light);
+    color: var(--success);
+}
+
+.payment-count.pending {
+    background: var(--warning-light);
+    color: var(--warning);
+}
+
+.no-participation {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+}
+
+.no-participation i {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    display: block;
+    opacity: 0.5;
+}
+
+.user-notes {
+    padding: 1.5rem;
+    background: #fef3c7;
+    border-left: 4px solid var(--warning);
+}
+
+.notes-header {
+    color: var(--warning);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.notes-content {
+    color: #92400e;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.user-actions {
+    padding: 1.5rem;
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.user-actions .btn {
+    flex: 1;
+    min-width: 120px;
+    text-align: center;
+}
+
+/* Assignment Modal Styles */
 .assignment-header {
     display: flex;
     justify-content: space-between;
@@ -865,6 +1208,42 @@ function testAjax() {
 .info-header .info-subtitle {
     color: var(--text-secondary);
     font-size: 0.9rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .user-header {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .user-status-badges {
+        align-items: flex-start;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+    
+    .user-essentials {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .course-participation {
+        justify-content: center;
+    }
+    
+    .user-actions {
+        flex-direction: column;
+    }
+    
+    .user-actions .btn {
+        min-width: auto;
+    }
+}
+
+/* Animation */
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.9; }
 }
 </style>
 
