@@ -316,10 +316,6 @@ function getUserById($pdo, $id) {
 <div class="container">
     <!-- Integrated Toolbar with Stats -->
     <div class="card">
-        <div class="card-header">
-            <h2>👥 Gebruikersbeheer</h2>
-            <p style="color: var(--text-secondary); margin: 0;">Beheer gebruikers, cursustoekenningen en betalingen vanuit één centrale plek</p>
-        </div>
         
         <!-- Statistics Row -->
         <div class="course-essentials" style="margin: 0; border-radius: 0; border-bottom: 1px solid var(--border);">
