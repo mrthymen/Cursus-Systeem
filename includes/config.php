@@ -145,9 +145,11 @@ define('DB_COLLATE', 'utf8mb4_unicode_ci');
 define('BASE_URL', 'https://inventijn.nl/cursus-systeem/');
 
 // Admin email voor notificaties
-define('ADMIN_EMAIL', 'martijn@planken.cc'); // Extern adres
+//define('ADMIN_EMAIL', 'martijn@planken.cc'); // Extern adres
 define('SYSTEM_EMAIL', 'noreply@planken.cc'); // From-address
 define('REPLY_TO_EMAIL', 'martijn@planken.cc'); // Reply-to
+define('ADMIN_EMAIL', 'martijn@inventijn.nl');  // ← Jouw email
+define('FROM_EMAIL', 'noreply@inventijn.nl');   // ← Jouw domain
 
 // Email system configuration
 define('EMAIL_SEND_ENABLED', true);
