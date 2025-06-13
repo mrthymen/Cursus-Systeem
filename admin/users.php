@@ -314,62 +314,49 @@ function getUserById($pdo, $id) {
 
 <!-- Page content -->
 <div class="container">
-    <!-- Page Header -->
+    <!-- Integrated Toolbar with Stats -->
     <div class="card">
         <div class="card-header">
             <h2>👥 Gebruikersbeheer</h2>
             <p style="color: var(--text-secondary); margin: 0;">Beheer gebruikers, cursustoekenningen en betalingen vanuit één centrale plek</p>
         </div>
-    </div>
-
-    <!-- Statistics Cards -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-icon">👥</div>
-            <div class="stat-content">
-                <div class="stat-label">Totaal Gebruikers</div>
-                <div class="stat-value"><?= number_format($stats['total_users']) ?></div>
+        
+        <!-- Statistics Row -->
+        <div class="course-essentials" style="margin: 0; border-radius: 0; border-bottom: 1px solid var(--border);">
+            <div class="essential-item">
+                <div class="essential-label">👥 Totaal Gebruikers</div>
+                <div class="essential-value"><?= number_format($stats['total_users']) ?></div>
+            </div>
+            
+            <div class="essential-item">
+                <div class="essential-label">✅ Actieve Gebruikers</div>
+                <div class="essential-value"><?= number_format($stats['active_users']) ?></div>
+            </div>
+            
+            <div class="essential-item">
+                <div class="essential-label">📈 Nieuwe (7 dagen)</div>
+                <div class="essential-value"><?= number_format($stats['new_users_week']) ?></div>
+            </div>
+            
+            <div class="essential-item">
+                <div class="essential-label">💰 Betaalde Inschrijvingen</div>
+                <div class="essential-value"><?= number_format($stats['paid_courses']) ?></div>
             </div>
         </div>
         
-        <div class="stat-card">
-            <div class="stat-icon">✅</div>
-            <div class="stat-content">
-                <div class="stat-label">Actieve Gebruikers</div>
-                <div class="stat-value"><?= number_format($stats['active_users']) ?></div>
-            </div>
-        </div>
-        
-        <div class="stat-card">
-            <div class="stat-icon">📈</div>
-            <div class="stat-content">
-                <div class="stat-label">Nieuwe (7 dagen)</div>
-                <div class="stat-value"><?= number_format($stats['new_users_week']) ?></div>
-            </div>
-        </div>
-        
-        <div class="stat-card">
-            <div class="stat-icon">💰</div>
-            <div class="stat-content">
-                <div class="stat-label">Betaalde Inschrijvingen</div>
-                <div class="stat-value"><?= number_format($stats['paid_courses']) ?></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Toolbar -->
-    <div class="card">
-        <div class="card-body">
-            <div class="toolbar">
-                <div class="search-group">
+        <!-- Toolbar Controls -->
+        <div style="padding: 1.5rem;">
+            <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 250px;">
                     <input type="text" 
                            placeholder="🔍 Zoek op naam, email of bedrijf..." 
                            value="<?= htmlspecialchars($search) ?>"
                            id="searchInput"
-                           onkeyup="if(event.key==='Enter') applyFilters()">
+                           onkeyup="if(event.key==='Enter') applyFilters()"
+                           style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem;">
                 </div>
                 
-                <select id="statusFilter" onchange="applyFilters()">
+                <select id="statusFilter" onchange="applyFilters()" style="padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; background: white;">
                     <option value="all" <?= $status === 'all' ? 'selected' : '' ?>>Alle gebruikers</option>
                     <option value="active" <?= $status === 'active' ? 'selected' : '' ?>>Actieve gebruikers</option>
                     <option value="inactive" <?= $status === 'inactive' ? 'selected' : '' ?>>Inactieve gebruikers</option>
