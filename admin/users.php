@@ -828,14 +828,12 @@ function showBulkImportModal() {
 }
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Generate edit and reset functions for this page
-    generateEditFunction('user');
-    generateResetFunction('user');
-    
-    // Initialize page-specific functionality
-    initializeUsersPage();
-});
+// ============================================
+// USER MANAGEMENT SYSTEM v6.4.0
+// Complete self-contained JavaScript
+// ============================================
+
+console.log('🚀 Loading user management JavaScript...');
 
 // Global variables
 let currentEditUserId = null;
@@ -843,14 +841,12 @@ let currentAssignUserId = null;
 let courseAssignmentCounter = 0;
 const allCoursesData = <?= json_encode($allCourses) ?>;
 
-function initializeUsersPage() {
-    console.log('Users page initialized');
-    // Test AJAX connection
-    testAjax();
-}
+// ============================================
+// CORE HELPER FUNCTIONS
+// ============================================
 
-// ESSENTIAL HELPER FUNCTIONS (missing from unified system)
 function fetchData(url) {
+    console.log('📡 Fetching:', url);
     return fetch(url)
         .then(response => {
             if (!response.ok) {
@@ -869,24 +865,36 @@ function fetchData(url) {
 }
 
 function showNotification(message, type = 'info') {
-    // Simple notification system
+    console.log('📢 Notification:', message, type);
     const notification = document.createElement('div');
     notification.className = `message ${type}`;
     notification.textContent = message;
-    notification.style.position = 'fixed';
-    notification.style.top = '20px';
-    notification.style.right = '20px';
-    notification.style.zIndex = '9999';
-    notification.style.maxWidth = '300px';
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+        max-width: 300px;
+        padding: 1rem;
+        border-radius: 6px;
+        color: white;
+        font-weight: 500;
+    `;
+    
+    // Set background based on type
+    switch(type) {
+        case 'success': notification.style.background = '#059669'; break;
+        case 'error': notification.style.background = '#dc2626'; break;
+        case 'warning': notification.style.background = '#d97706'; break;
+        default: notification.style.background = '#2563eb';
+    }
     
     document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        notification.remove();
-    }, 3000);
+    setTimeout(() => notification.remove(), 3000);
 }
 
 function openModal(modalId) {
+    console.log('🎯 Opening modal:', modalId);
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.style.display = 'block';
@@ -895,10 +903,13 @@ function openModal(modalId) {
         if (modalId === 'userModal' && !document.getElementById('userId').value) {
             resetUserForm();
         }
+    } else {
+        console.error('❌ Modal not found:', modalId);
     }
 }
 
 function closeModal(modalId) {
+    console.log('❌ Closing modal:', modalId);
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.style.display = 'none';
@@ -906,8 +917,12 @@ function closeModal(modalId) {
 }
 
 function fillFormFromData(formId, data) {
+    console.log('📝 Filling form:', formId, data);
     const form = document.getElementById(formId);
-    if (!form) return;
+    if (!form) {
+        console.error('❌ Form not found:', formId);
+        return;
+    }
     
     Object.keys(data).forEach(key => {
         const field = form.querySelector(`[name="${key}"], #${key}`);
@@ -922,15 +937,23 @@ function fillFormFromData(formId, data) {
 }
 
 function resetForm(formId) {
+    console.log('🔄 Resetting form:', formId);
     const form = document.getElementById(formId);
     if (form) {
         form.reset();
     }
 }
 
-// Generate edit and reset functions for CRUD entities
+// ============================================
+// EDIT FUNCTION GENERATOR
+// ============================================
+
 function generateEditFunction(entity) {
-    window['edit' + entity.charAt(0).toUpperCase() + entity.slice(1)] = async function(id) {
+    console.log('⚙️ Generating edit function for:', entity);
+    const funcName = 'edit' + entity.charAt(0).toUpperCase() + entity.slice(1);
+    
+    window[funcName] = async function(id) {
+        console.log(`🔧 ${funcName} called with ID:`, id);
         try {
             showNotification('Laden...', 'info');
             
@@ -964,11 +987,16 @@ function generateEditFunction(entity) {
             showNotification('Fout bij laden: ' + error.message, 'error');
         }
     };
+    
+    console.log(`✅ Generated function: ${funcName}`);
 }
 
-// Auto-generate reset functions
 function generateResetFunction(entity) {
-    window['reset' + entity.charAt(0).toUpperCase() + entity.slice(1) + 'Form'] = function() {
+    console.log('⚙️ Generating reset function for:', entity);
+    const funcName = 'reset' + entity.charAt(0).toUpperCase() + entity.slice(1) + 'Form';
+    
+    window[funcName] = function() {
+        console.log(`🔄 ${funcName} called`);
         const formId = entity + 'Form';
         resetForm(formId);
         
@@ -977,23 +1005,29 @@ function generateResetFunction(entity) {
         document.getElementById(entity + 'ModalTitle').textContent = entity.charAt(0).toUpperCase() + entity.slice(1) + ' Aanmaken';
         document.getElementById(entity + 'ModalSubmitText').textContent = entity.charAt(0).toUpperCase() + entity.slice(1) + ' Aanmaken';
     };
+    
+    console.log(`✅ Generated function: ${funcName}`);
 }
 
-// Search and filter functions
+// ============================================
+// USER-SPECIFIC FUNCTIONS
+// ============================================
+
 function applyFilters() {
+    console.log('🔍 Applying filters...');
     const search = document.getElementById('searchInput').value;
     const status = document.getElementById('statusFilter').value;
     
     const url = new URL(window.location);
     url.searchParams.set('search', search);
     url.searchParams.set('status', status);
-    url.searchParams.set('page', '1'); // Reset to first page
+    url.searchParams.set('page', '1');
     
     window.location.href = url.toString();
 }
 
-// Reset user form for creating new user
 function resetUserForm() {
+    console.log('🔄 Resetting user form...');
     const form = document.getElementById('userForm');
     if (form) {
         form.reset();
@@ -1010,8 +1044,8 @@ function resetUserForm() {
     }
 }
 
-// Delete user with confirmation
 function deleteUser(userId) {
+    console.log('🗑️ Delete user called:', userId);
     if (!confirm('Weet je zeker dat je deze gebruiker wilt deactiveren?\n\nDe gebruiker wordt niet verwijderd maar gemarkeerd als inactief.')) {
         return;
     }
@@ -1026,8 +1060,8 @@ function deleteUser(userId) {
     form.submit();
 }
 
-// Course assignment functions
 async function assignCourses(userId) {
+    console.log('📚 Assign courses called:', userId);
     try {
         currentAssignUserId = userId;
         courseAssignmentCounter = 0;
@@ -1069,8 +1103,8 @@ async function assignCourses(userId) {
     }
 }
 
-// Add course assignment row
 function addCourseAssignment(existingCourse = null) {
+    console.log('➕ Adding course assignment:', existingCourse);
     const id = ++courseAssignmentCounter;
     const container = document.getElementById('courseAssignments');
     
@@ -1120,16 +1154,16 @@ function addCourseAssignment(existingCourse = null) {
     container.appendChild(assignmentDiv);
 }
 
-// Remove course assignment
 function removeCourseAssignment(id) {
+    console.log('➖ Removing course assignment:', id);
     const element = document.getElementById(`assignment-${id}`);
     if (element) {
         element.remove();
     }
 }
 
-// Save course assignments
 async function saveCourseAssignments() {
+    console.log('💾 Saving course assignments...');
     const assignments = [];
     const container = document.getElementById('courseAssignments');
     const assignmentDivs = container.querySelectorAll('[id^="assignment-"]');
@@ -1159,22 +1193,19 @@ async function saveCourseAssignments() {
     form.submit();
 }
 
-// Bulk import placeholder
 function showBulkImportModal() {
+    console.log('📋 Bulk import modal called');
     showNotification('📋 Bulk import functionaliteit komt binnenkort! Deze feature zal CSV import ondersteunen voor grote aantallen gebruikers.', 'info');
 }
 
-// View user details function
 function viewUserDetails(userId) {
-    // For now, redirect to edit modal with read-only view
+    console.log('👁️ View user details:', userId);
     editUser(userId);
-    
-    // Future enhancement: Create dedicated details modal
     showNotification('Gebruiker details geladen in bewerk modus', 'info');
 }
 
-// Reactivate user function
 function reactivateUser(userId) {
+    console.log('▶️ Reactivate user:', userId);
     if (!confirm('Weet je zeker dat je deze gebruiker wilt reactiveren?')) {
         return;
     }
@@ -1191,18 +1222,46 @@ function reactivateUser(userId) {
     form.submit();
 }
 
-// Test AJAX connection
 function testAjax() {
+    console.log('🧪 Testing AJAX connection...');
     fetchData('?ajax=1&action=test')
         .then(response => {
             if (response.status === 'success') {
                 console.log('✅ AJAX connection working:', response.message);
+                showNotification('AJAX connection working!', 'success');
             }
         })
         .catch(error => {
             console.error('❌ AJAX test failed:', error);
+            showNotification('AJAX test failed: ' + error.message, 'error');
         });
 }
+
+// ============================================
+// INITIALIZATION
+// ============================================
+
+function initializeUsersPage() {
+    console.log('🎬 Initializing users page...');
+    
+    // Generate CRUD functions
+    generateEditFunction('user');
+    generateResetFunction('user');
+    
+    // Test AJAX connection
+    testAjax();
+    
+    console.log('✅ Users page initialized successfully');
+}
+
+// ============================================
+// EVENT LISTENERS
+// ============================================
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('📄 DOM Content Loaded - starting initialization...');
+    initializeUsersPage();
+});
 
 // Close modal when clicking outside
 window.onclick = function(event) {
@@ -1230,6 +1289,20 @@ document.addEventListener('keydown', function(e) {
         resetUserForm();
     }
 });
+
+// Debug: Log all function definitions
+setTimeout(() => {
+    console.log('🔧 User management functions loaded:');
+    console.log('- openModal:', typeof openModal);
+    console.log('- closeModal:', typeof closeModal);
+    console.log('- editUser:', typeof editUser);
+    console.log('- deleteUser:', typeof deleteUser);
+    console.log('- assignCourses:', typeof assignCourses);
+    console.log('- resetUserForm:', typeof resetUserForm);
+    console.log('- applyFilters:', typeof applyFilters);
+    console.log('- showBulkImportModal:', typeof showBulkImportModal);
+    console.log('✅ All functions should be available now!');
+}, 100);
 </script>
 </script>
 
