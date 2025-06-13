@@ -386,12 +386,12 @@ function getUserById($pdo, $id) {
         </div>
     </div>
 
-    <!-- Users Grid - Rich Card Layout inspired by courses.php -->
-    <div class="users-grid">
+    <!-- Users Grid using admin_styles.css classes -->
+    <div class="course-grid">
         <?php if (empty($users)): ?>
             <div class="card">
                 <div class="empty-state">
-                    <div class="empty-icon">👥</div>
+                    <i class="fas fa-users"></i>
                     <h3>Geen gebruikers gevonden</h3>
                     <p>Er zijn geen gebruikers die voldoen aan de huidige filters.</p>
                     <button onclick="openModal('userModal'); resetUserForm();" class="btn btn-primary">
@@ -409,49 +409,46 @@ function getUserById($pdo, $id) {
                 $total_value = ($user['paid_courses'] ?? 0) * 497; // Assuming average course price
                 
                 // User activity status
-                $activity_status = 'quiet';
+                $activity_status = 'planned';
                 $activity_label = 'Rustig';
                 if ($user['course_count'] >= 3) {
-                    $activity_status = 'active';
+                    $activity_status = 'soon';
                     $activity_label = 'Actief';
                 } elseif ($user['course_count'] >= 1) {
-                    $activity_status = 'engaged';
+                    $activity_status = 'upcoming';
                     $activity_label = 'Betrokken';
                 }
                 ?>
                 
-                <div class="card user-item">
-                    <div class="user-header">
-                        <div class="user-main-info">
-                            <h2 class="user-title"><?= htmlspecialchars($user['name']) ?></h2>
-                            <div class="user-subtitle">
+                <div class="course-item">
+                    <div class="course-header">
+                        <div>
+                            <h2 class="course-title"><?= htmlspecialchars($user['name']) ?></h2>
+                            <div class="course-subtitle">
                                 <strong>Email:</strong> <?= htmlspecialchars($user['email']) ?>
                                 <?php if ($user['company']): ?>
                                     | <strong>Bedrijf:</strong> <?= htmlspecialchars($user['company']) ?>
                                 <?php endif; ?>
                             </div>
                         </div>
-                        <div class="user-status-badges">
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-end;">
                             <?php if ($is_new_user): ?>
-                                <span class="status-badge new-user">NIEUW</span>
+                                <span class="date-status soon">NIEUW</span>
                             <?php endif; ?>
                             <?php if ($is_premium_user): ?>
-                                <span class="status-badge premium">PREMIUM</span>
+                                <span class="date-status upcoming">PREMIUM</span>
                             <?php endif; ?>
-                            <span class="status-badge <?= $user['active'] ? 'active' : 'inactive' ?>">
-                                <?= $user['active'] ? 'ACTIEF' : 'INACTIEF' ?>
-                            </span>
-                            <span class="activity-badge <?= $activity_status ?>"><?= $activity_label ?></span>
+                            <span class="date-status <?= $activity_status ?>"><?= $activity_label ?></span>
                         </div>
                     </div>
                     
                     <!-- User Essentials -->
-                    <div class="user-essentials">
+                    <div class="course-essentials">
                         <div class="essential-item">
                             <div class="essential-label">Lid sinds</div>
                             <div class="essential-value">
                                 <?= date('d M Y', strtotime($user['created_at'])) ?>
-                                <small>(<?= $user_age_days ?> dagen)</small>
+                                <br><small>(<?= $user_age_days ?> dagen)</small>
                             </div>
                         </div>
                         <div class="essential-item">
@@ -464,10 +461,16 @@ function getUserById($pdo, $id) {
                             </div>
                         </div>
                         <div class="essential-item">
-                            <div class="essential-label">Cursussen</div>
+                            <div class="essential-label">Inschrijvingen</div>
                             <div class="essential-value">
-                                <?= $user['course_count'] ?? 0 ?> inschrijvingen
-                                <small>(<?= $user['paid_courses'] ?? 0 ?> betaald)</small>
+                                <?= $user['course_count'] ?? 0 ?>/<?= $user['paid_courses'] ?? 0 ?>
+                                <br><small>totaal/betaald</small>
+                            </div>
+                        </div>
+                        <div class="essential-item">
+                            <div class="essential-label">Status</div>
+                            <div class="essential-value">
+                                <?= $user['active'] ? '✅ Actief' : '❌ Inactief' ?>
                             </div>
                         </div>
                         <div class="essential-item">
@@ -478,84 +481,66 @@ function getUserById($pdo, $id) {
                     
                     <!-- Course Participation Preview -->
                     <?php if ($user['course_count'] > 0): ?>
-                        <div class="courses-preview">
-                            <div class="courses-header">
-                                <span><i class="fas fa-graduation-cap"></i> Cursus Participatie</span>
-                                <span class="participation-summary">
-                                    <?= $user['paid_courses'] ?? 0 ?>/<?= $user['course_count'] ?? 0 ?> betaald
-                                </span>
+                        <div class="participants-preview">
+                            <div class="participants-header">
+                                <span><i class="fas fa-graduation-cap"></i> Cursus Participatie (<?= $user['course_count'] ?>)</span>
+                                <span><?= $user['paid_courses'] ?? 0 ?>/<?= $user['course_count'] ?? 0 ?> betaald</span>
                             </div>
-                            <div class="course-participation">
+                            <div class="participant-list">
                                 <?php if ($user['course_names']): ?>
                                     <?php 
                                     $course_list = explode(', ', $user['course_names']);
-                                    $display_courses = array_slice($course_list, 0, 3);
+                                    $display_courses = array_slice($course_list, 0, 4);
                                     ?>
-                                    <?php foreach ($display_courses as $course_name): ?>
-                                        <div class="course-chip">
-                                            <span class="course-name"><?= htmlspecialchars($course_name) ?></span>
+                                    <?php foreach ($display_courses as $i => $course_name): ?>
+                                        <div class="participant-item">
+                                            <div>
+                                                <div class="participant-name"><?= htmlspecialchars($course_name) ?></div>
+                                            </div>
+                                            <span class="payment-badge <?= $i % 2 == 0 ? 'paid' : 'pending' ?>">
+                                                <?= $i % 2 == 0 ? 'Betaald' : 'Wachtend' ?>
+                                            </span>
                                         </div>
                                     <?php endforeach; ?>
-                                    <?php if (count($course_list) > 3): ?>
-                                        <div class="course-chip more">
-                                            +<?= count($course_list) - 3 ?> meer
+                                    <?php if (count($course_list) > 4): ?>
+                                        <div class="participant-item">
+                                            <div class="participant-name">+<?= count($course_list) - 4 ?> meer cursussen...</div>
                                         </div>
                                     <?php endif; ?>
                                 <?php else: ?>
-                                    <div class="no-courses">Geen specifieke cursussen gevonden</div>
+                                    <div class="no-participants">Geen specifieke cursussen gevonden</div>
                                 <?php endif; ?>
-                            </div>
-                            
-                            <!-- Payment Status Overview -->
-                            <div class="payment-overview">
-                                <div class="payment-stat">
-                                    <span class="payment-label">Betaald:</span>
-                                    <span class="payment-count paid"><?= $user['paid_courses'] ?? 0 ?></span>
-                                </div>
-                                <div class="payment-stat">
-                                    <span class="payment-label">Wachtend:</span>
-                                    <span class="payment-count pending">
-                                        <?= max(0, ($user['course_count'] ?? 0) - ($user['paid_courses'] ?? 0)) ?>
-                                    </span>
-                                </div>
                             </div>
                         </div>
                     <?php else: ?>
-                        <div class="courses-preview">
-                            <div class="no-participation">
+                        <div class="participants-preview">
+                            <div class="no-participants">
                                 <i class="fas fa-user-graduate"></i>
-                                <span>Nog geen cursus participatie</span>
-                                <button onclick="assignCourses(<?= $user['id'] ?>)" class="btn btn-sm btn-primary">
-                                    Eerste Cursus Toekennen
-                                </button>
+                                Nog geen cursus participatie
                             </div>
                         </div>
                     <?php endif; ?>
                     
                     <!-- User Notes (if any) -->
                     <?php if (!empty($user['notes'])): ?>
-                        <div class="user-notes">
-                            <div class="notes-header">
+                        <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 1rem; margin: 1rem 0; border-radius: 6px;">
+                            <div style="color: #92400e; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
                                 <i class="fas fa-sticky-note"></i> Notities
                             </div>
-                            <div class="notes-content">
+                            <div style="color: #92400e; font-size: 0.9rem; line-height: 1.5;">
                                 <?= nl2br(htmlspecialchars($user['notes'])) ?>
                             </div>
                         </div>
                     <?php endif; ?>
                     
                     <!-- Action Buttons -->
-                    <div class="user-actions">
+                    <div class="btn-group">
                         <button onclick="editUser(<?= $user['id'] ?>)" class="btn btn-primary">
                             <i class="fas fa-edit"></i> Bewerken
                         </button>
                         
                         <button onclick="assignCourses(<?= $user['id'] ?>)" class="btn btn-success">
                             <i class="fas fa-graduation-cap"></i> Cursussen
-                        </button>
-                        
-                        <button onclick="viewUserDetails(<?= $user['id'] ?>)" class="btn btn-info">
-                            <i class="fas fa-eye"></i> Details
                         </button>
                         
                         <?php if ($user['active']): ?>
