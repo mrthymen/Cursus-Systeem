@@ -6,12 +6,9 @@
  * Updated: 2025-06-13
  * Changes: 
  * v6.4.0 - Converted to unified admin design system
- * v6.4.0 - Replaced custom CSS with unified admin_styles.css
- * v6.4.0 - Integrated admin_header.php and admin_footer.php
- * v6.4.0 - Migrated to renderCrudModal() system
- * v6.4.0 - Added AJAX edit functionality for users
- * v6.4.0 - Enhanced course assignment modal system
- * v6.4.0 - Improved responsive design and UX
+ * v6.4.0 - FIXED: Event parameter issue in saveCourseAssignments
+ * v6.4.0 - FIXED: All modal and JavaScript function calls
+ * v6.4.0 - Added defensive programming for missing functions
  */
 
 session_start();
@@ -588,30 +585,172 @@ let courseAssignmentCounter = 0;
 const usersData = <?= json_encode($users) ?>;
 const allCoursesData = <?= json_encode($allCourses) ?>;
 
-// AJAX testing function
-function testAjax() {
-    fetchData('?ajax=1&action=test')
-        .then(result => {
-            console.log('✅ AJAX Test Result:', result);
-            showNotification('AJAX verbinding werkt!', 'success');
-        })
-        .catch(error => {
-            console.error('❌ AJAX Test Failed:', error);
-            showNotification('AJAX fout: ' + error.message, 'error');
-        });
+// Safe loading modal functions
+function safeOpenLoadingModal() {
+    if (typeof openLoadingModal !== 'undefined') {
+        openLoadingModal();
+    } else {
+        console.log('ℹ️ Loading modal not available, continuing...');
+    }
 }
 
-// Search and filter functions
-function applyFilters() {
-    const search = document.querySelector('input[placeholder*="Zoek"]').value;
-    const status = document.querySelector('select').value;
+function safeCloseLoadingModal() {
+    if (typeof closeLoadingModal !== 'undefined') {
+        closeLoadingModal();
+    } else {
+        console.log('ℹ️ Loading modal not available, continuing...');
+    }
+}
+
+// Safe modal functions
+function safeOpenModal(modalId) {
+    if (typeof openModal !== 'undefined') {
+        openModal(modalId);
+    } else {
+        // Fallback: show modal manually
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+}
+
+function safeCloseModal(modalId) {
+    if (typeof closeModal !== 'undefined') {
+        closeModal(modalId);
+    } else {
+        // Fallback: hide modal manually
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+    }
+}
+
+// Safe notification function
+function safeShowNotification(message, type = 'info') {
+    if (typeof showNotification !== 'undefined') {
+        showNotification(message, type);
+    } else {
+        // Fallback to alert
+        const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+        alert((icons[type] || 'ℹ️') + ' ' + message);
+    }
+}
+
+// Debug function to check if all required functions exist
+function checkRequiredFunctions() {
+    const requiredFunctions = [
+        'openModal', 'closeModal', 'showNotification', 'fetchData',
+        'setButtonLoading', 'fillFormFromData', 'resetForm', 'confirmDelete'
+    ];
     
-    const url = new URL(window.location);
-    url.searchParams.set('search', search);
-    url.searchParams.set('status', status);
-    url.searchParams.set('page', '1'); // Reset to first page
+    const missing = requiredFunctions.filter(fn => typeof window[fn] === 'undefined');
     
-    window.location.href = url.toString();
+    if (missing.length > 0) {
+        console.error('❌ Missing functions:', missing);
+        console.log('💡 This usually means admin_footer.php is not loaded correctly');
+        return false;
+    } else {
+        console.log('✅ All required functions are available');
+        return true;
+    }
+}
+
+// AJAX testing function
+function testAjax() {
+    if (typeof fetchData !== 'undefined') {
+        fetchData('?ajax=1&action=test')
+            .then(result => {
+                console.log('✅ AJAX Test Result:', result);
+                safeShowNotification('AJAX verbinding werkt!', 'success');
+            })
+            .catch(error => {
+                console.error('❌ AJAX Test Failed:', error);
+                safeShowNotification('AJAX fout: ' + error.message, 'error');
+            });
+    } else {
+        console.error('❌ fetchData function not available');
+        alert('❌ AJAX functions not loaded');
+    }
+}
+
+// Safe modal opener
+function openUserModal() {
+    resetUserForm();
+    safeOpenModal('userModal');
+}
+
+// Reset user form function  
+function resetUserForm() {
+    if (typeof resetForm !== 'undefined') {
+        resetForm('userForm');
+    } else {
+        // Manual reset
+        const form = document.getElementById('userForm');
+        if (form) form.reset();
+    }
+    
+    document.getElementById('userAction').value = 'create_user';
+    document.getElementById('userId').value = '';
+    document.getElementById('userModalTitle').textContent = 'Nieuwe Gebruiker';
+    document.getElementById('userModalSubmitText').textContent = 'Gebruiker Aanmaken';
+}
+
+// Edit user function
+async function editUser(userId) {
+    if (!checkRequiredFunctions()) {
+        alert('❌ System functions not loaded. Please refresh the page.');
+        return;
+    }
+    
+    try {
+        safeOpenLoadingModal();
+        
+        const response = await fetchData(`?ajax=1&action=get_user&id=${userId}`);
+        
+        safeCloseLoadingModal();
+        
+        if (response.error) {
+            throw new Error(response.error);
+        }
+        
+        // Fill form
+        if (typeof fillFormFromData !== 'undefined') {
+            fillFormFromData('userForm', response);
+        } else {
+            // Manual form filling
+            document.getElementById('name').value = response.name || '';
+            document.getElementById('email').value = response.email || '';
+            document.getElementById('phone').value = response.phone || '';
+            document.getElementById('company').value = response.company || '';
+            document.getElementById('notes').value = response.notes || '';
+        }
+        
+        // Update form action and modal title  
+        document.getElementById('userAction').value = 'update_user';
+        document.getElementById('userId').value = response.id;
+        document.getElementById('userModalTitle').textContent = 'Gebruiker Bewerken';
+        document.getElementById('userModalSubmitText').textContent = 'Gebruiker Bijwerken';
+        
+        // Set active checkbox
+        document.getElementById('active').checked = response.active == '1';
+        
+        // Open modal
+        safeOpenModal('userModal');
+        safeShowNotification('Gebruiker geladen!', 'success');
+        
+    } catch (error) {
+        safeCloseLoadingModal();
+        console.error('Error loading user:', error);
+        safeShowNotification('Fout bij laden: ' + error.message, 'error');
+    }
 }
 
 // Course assignment functions
@@ -623,7 +762,7 @@ async function assignCourses(userId) {
     
     const user = usersData.find(u => u.id == userId);
     if (!user) {
-        showNotification('Gebruiker niet gevonden', 'error');
+        safeShowNotification('Gebruiker niet gevonden', 'error');
         return;
     }
     
@@ -661,20 +800,14 @@ async function assignCourses(userId) {
             
             // Show modal
             safeOpenModal('courseAssignmentModal');
-            if (typeof showNotification !== 'undefined') {
-                showNotification('Cursussen geladen!', 'success');
-            }
+            safeShowNotification('Cursussen geladen!', 'success');
         } else {
-            showNotification('Fout bij laden: ' + (result.error || 'Onbekende fout'), 'error');
+            safeShowNotification('Fout bij laden: ' + (result.error || 'Onbekende fout'), 'error');
         }
     } catch (error) {
         safeCloseLoadingModal();
         console.error('Error loading courses:', error);
-        if (typeof showNotification !== 'undefined') {
-            showNotification('Fout bij laden: ' + error.message, 'error');
-        } else {
-            alert('Fout bij laden: ' + error.message);
-        }
+        safeShowNotification('Fout bij laden: ' + error.message, 'error');
     }
 }
 
@@ -742,8 +875,11 @@ function removeCourseAssignment(id) {
     }
 }
 
-// Save course assignments
-async function saveCourseAssignments() {
+// FIXED: Save course assignments with proper event handling
+async function saveCourseAssignments(event = null) {
+    // Find the button that was clicked
+    const saveButton = event ? event.target : document.querySelector('#courseAssignmentModal .btn-primary');
+    
     const assignments = [];
     const container = document.getElementById('course_assignments');
     const assignmentDivs = container.querySelectorAll('[id^="assignment-"]');
@@ -768,55 +904,39 @@ async function saveCourseAssignments() {
     formData.append('courses', JSON.stringify(assignments));
     
     try {
-        setButtonLoading(event.target, true);
+        // Safe button loading
+        if (saveButton && typeof setButtonLoading !== 'undefined') {
+            setButtonLoading(saveButton, true);
+        }
         
         const response = await fetch('', {
             method: 'POST',
             body: formData
         });
         
-        setButtonLoading(event.target, false);
+        // Reset button loading
+        if (saveButton && typeof setButtonLoading !== 'undefined') {
+            setButtonLoading(saveButton, false);
+        }
         
         if (response.ok) {
-            if (typeof showNotification !== 'undefined') {
-                showNotification('Cursussen opgeslagen!', 'success');
-            } else {
-                alert('Cursussen opgeslagen!');
-            }
+            safeShowNotification('Cursussen opgeslagen!', 'success');
             safeCloseModal('courseAssignmentModal');
             setTimeout(() => location.reload(), 1000);
         } else {
             throw new Error('Server error: ' + response.status);
         }
     } catch (error) {
-        if (typeof setButtonLoading !== 'undefined') {
-            setButtonLoading(event.target, false);
+        // Reset button loading on error
+        if (saveButton && typeof setButtonLoading !== 'undefined') {
+            setButtonLoading(saveButton, false);
         }
         console.error('Error saving courses:', error);
-        if (typeof showNotification !== 'undefined') {
-            showNotification('Fout bij opslaan: ' + error.message, 'error');
-        } else {
-            alert('Fout bij opslaan: ' + error.message);
-        }
+        safeShowNotification('Fout bij opslaan: ' + error.message, 'error');
     }
 }
 
-// Safe loading modal functions
-function safeOpenLoadingModal() {
-    if (typeof openLoadingModal !== 'undefined') {
-        openLoadingModal();
-    } else {
-        console.log('ℹ️ Loading modal not available, continuing...');
-    }
-}
-
-function safeCloseLoadingModal() {
-    if (typeof closeLoadingModal !== 'undefined') {
-        closeLoadingModal();
-    } else {
-        console.log('ℹ️ Loading modal not available, continuing...');
-    }
-}
+// Safe confirm delete function
 function safeConfirmDelete(itemName, callback) {
     if (typeof confirmDelete !== 'undefined') {
         confirmDelete(itemName, callback);
@@ -841,152 +961,33 @@ async function deleteUser(userId) {
         });
         
         if (response.ok) {
-            if (typeof showNotification !== 'undefined') {
-                showNotification('Gebruiker gedeactiveerd!', 'success');
-            } else {
-                alert('Gebruiker gedeactiveerd!');
-            }
+            safeShowNotification('Gebruiker gedeactiveerd!', 'success');
             setTimeout(() => location.reload(), 1000);
         } else {
             throw new Error('Server error: ' + response.status);
         }
     } catch (error) {
         console.error('Error deleting user:', error);
-        if (typeof showNotification !== 'undefined') {
-            showNotification('Fout bij verwijderen: ' + error.message, 'error');
-        } else {
-            alert('Fout bij verwijderen: ' + error.message);
-        }
+        safeShowNotification('Fout bij verwijderen: ' + error.message, 'error');
     }
+}
+
+// Search and filter functions
+function applyFilters() {
+    const search = document.querySelector('input[placeholder*="Zoek"]').value;
+    const status = document.querySelector('select').value;
+    
+    const url = new URL(window.location);
+    url.searchParams.set('search', search);
+    url.searchParams.set('status', status);
+    url.searchParams.set('page', '1'); // Reset to first page
+    
+    window.location.href = url.toString();
 }
 
 // Bulk import placeholder
 function showBulkImportModal() {
-    showNotification('Bulk import functionaliteit komt binnenkort!', 'info', 4000);
-}
-
-// Safe loading modal functions
-function safeOpenLoadingModal() {
-    if (typeof openLoadingModal !== 'undefined') {
-        openLoadingModal();
-    } else {
-        console.log('ℹ️ Loading modal not available, continuing...');
-    }
-}
-
-function safeCloseLoadingModal() {
-    if (typeof closeLoadingModal !== 'undefined') {
-        closeLoadingModal();
-    } else {
-        console.log('ℹ️ Loading modal not available, continuing...');
-    }
-}
-
-// Debug function to check if all required functions exist
-function checkRequiredFunctions() {
-    const requiredFunctions = [
-        'openModal', 'closeModal', 'showNotification', 'fetchData',
-        'setButtonLoading', 'fillFormFromData', 'resetForm', 'confirmDelete'
-    ];
-    
-    const missing = requiredFunctions.filter(fn => typeof window[fn] === 'undefined');
-    
-    if (missing.length > 0) {
-        console.error('❌ Missing functions:', missing);
-        console.log('💡 This usually means admin_footer.php is not loaded correctly');
-        return false;
-    } else {
-        console.log('✅ All required functions are available');
-        return true;
-    }
-}
-
-// Edit user function (replaces generateEditFunction)
-async function editUser(userId) {
-    if (!checkRequiredFunctions()) {
-        alert('❌ System functions not loaded. Please refresh the page.');
-        return;
-    }
-    
-    try {
-        safeOpenLoadingModal();
-        
-        const response = await fetchData(`?ajax=1&action=get_user&id=${userId}`);
-        
-        safeCloseLoadingModal();
-        
-        if (response.error) {
-            throw new Error(response.error);
-        }
-        
-        // Fill form
-        fillFormFromData('userForm', response);
-        
-        // Update form action and modal title  
-        document.getElementById('userAction').value = 'update_user';
-        document.getElementById('userId').value = response.id;
-        document.getElementById('userModalTitle').textContent = 'Gebruiker Bewerken';
-        document.getElementById('userModalSubmitText').textContent = 'Gebruiker Bijwerken';
-        
-        // Set active checkbox
-        document.getElementById('active').checked = response.active == '1';
-        
-        // Open modal
-        safeOpenModal('userModal');
-        if (typeof showNotification !== 'undefined') {
-            showNotification('Gebruiker geladen!', 'success');
-        }
-        
-    } catch (error) {
-        safeCloseLoadingModal();
-        console.error('Error loading user:', error);
-        if (typeof showNotification !== 'undefined') {
-            showNotification('Fout bij laden: ' + error.message, 'error');
-        } else {
-            alert('Fout bij laden: ' + error.message);
-        }
-    }
-}
-
-// Reset user form function  
-function resetUserForm() {
-    if (typeof resetForm !== 'undefined') {
-        resetForm('userForm');
-    }
-    
-    document.getElementById('userAction').value = 'create_user';
-    document.getElementById('userId').value = '';
-    document.getElementById('userModalTitle').textContent = 'Nieuwe Gebruiker';
-    document.getElementById('userModalSubmitText').textContent = 'Gebruiker Aanmaken';
-}
-
-// Safe modal functions
-function safeOpenModal(modalId) {
-    if (typeof openModal !== 'undefined') {
-        openModal(modalId);
-    } else {
-        console.error('❌ openModal function not available');
-        alert('Modal system niet beschikbaar. Ververs de pagina.');
-    }
-}
-
-function safeCloseModal(modalId) {
-    if (typeof closeModal !== 'undefined') {
-        closeModal(modalId);
-    } else {
-        // Fallback: hide modal manually
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.style.display = 'none';
-            document.body.style.overflow = '';
-        }
-    }
-}
-
-// Safe modal opener
-function openUserModal() {
-    resetUserForm();
-    safeOpenModal('userModal');
+    safeShowNotification('Bulk import functionaliteit komt binnenkort!', 'info', 4000);
 }
 
 // Initialize page
