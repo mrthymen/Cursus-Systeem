@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Beheer - Unified System FIXED v6.4.3
+ * Cursus Beheer - Unified System FIXED v6.4.4  
  * Fixed version met echte database functies
  * Converted from original courses.php to unified system
  * Updated: 2025-06-13
@@ -15,6 +15,8 @@
  * v6.4.2 - FIXED: Improved fillTemplateData with better UX
  * v6.4.3 - FIXED: Better AJAX error handling and URL construction
  * v6.4.3 - FIXED: Improved JSON parsing with fallback error messages
+ * v6.4.4 - FIXED: Added admin_modals.php include for shared modal functions
+ * v6.4.4 - FIXED: Using shared generateEditFunction() instead of custom implementation
  */
 
 session_start();
