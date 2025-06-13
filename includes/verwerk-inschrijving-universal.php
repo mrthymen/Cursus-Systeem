@@ -175,32 +175,284 @@ function sendSimpleEmail($to_email, $to_name, $subject, $message) {
 /**
  * Simple Email Content Generator
  */
+/**
+ * Simple Email Content Generator v6.3.4 - Inventijn Branded Templates
+ * Updated: 2025-06-13 - Martijn's nieuwe Inventijn huisstijl
+ */
 function getSimpleEmailContent($type, $data) {
     debugLog("EMAIL: Generating content for type: $type", "EMAIL_CONTENT");
     
     $naam = htmlspecialchars($data['naam']);
     $training = htmlspecialchars($data['training_name']);
+    $email = htmlspecialchars($data['email']);
+    $organisatie = htmlspecialchars($data['organisatie'] ?? '');
+    
+    // Get full Inventijn branded HTML template
+    $inventijn_template = getInventijnEmailTemplate($naam, $training, $type);
     
     $templates = [
         'enrollment' => [
-            'subject' => "Inschrijving bevestigd: $training",
-            'participant' => "<h2>Inschrijving Bevestigd!</h2><p>Beste $naam,</p><p>Je inschrijving voor <strong>$training</strong> is ontvangen!</p><p>Met vriendelijke groet,<br>Martijn Planken</p>",
-            'admin' => "<h2>Nieuwe Inschrijving</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p><p><strong>Email:</strong> {$data['email']}</p>"
+            'subject' => "🎉 Je bent ingeschreven bij $training - Inventijn",
+            'participant' => $inventijn_template,
+            'admin' => "<h2>✅ Nieuwe Inschrijving</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p><p><strong>Email:</strong> $email</p><p><strong>Organisatie:</strong> " . ($organisatie ?: 'Niet opgegeven') . "</p><p><strong>Type:</strong> Directe inschrijving</p>"
         ],
         'interest' => [
-            'subject' => "Interesse geregistreerd: $training", 
-            'participant' => "<h2>Interesse Geregistreerd</h2><p>Beste $naam,</p><p>Bedankt voor je interesse in <strong>$training</strong>!</p><p>Met vriendelijke groet,<br>Martijn Planken</p>",
-            'admin' => "<h2>Nieuwe Interesse</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p>"
+            'subject' => "🎯 Interesse geregistreerd voor $training - Inventijn", 
+            'participant' => $inventijn_template,
+            'admin' => "<h2>🎯 Nieuwe Interesse</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p><p><strong>Email:</strong> $email</p><p><strong>Organisatie:</strong> " . ($organisatie ?: 'Niet opgegeven') . "</p><p><strong>Type:</strong> Interesse registratie</p>"
         ],
         'incompany' => [
-            'subject' => "Incompany aanvraag: $training",
-            'participant' => "<h2>Incompany Aanvraag</h2><p>Beste $naam,</p><p>Je aanvraag voor <strong>$training</strong> is ontvangen!</p><p>Met vriendelijke groet,<br>Martijn Planken</p>",
-            'admin' => "<h2>Incompany Aanvraag</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p>"
+            'subject' => "🏢 Incompany aanvraag voor $training - Inventijn",
+            'participant' => $inventijn_template,
+            'admin' => "<h2>🏢 Incompany Aanvraag</h2><p><strong>Training:</strong> $training</p><p><strong>Naam:</strong> $naam</p><p><strong>Email:</strong> $email</p><p><strong>Organisatie:</strong> " . ($organisatie ?: 'Niet opgegeven') . "</p><p><strong>Type:</strong> Incompany verzoek</p>"
         ]
     ];
     
     debugLog("EMAIL: Template found for type: $type", "EMAIL_CONTENT");
     return $templates[$type] ?? $templates['interest'];
+}
+
+/**
+ * Get full Inventijn branded email template
+ */
+function getInventijnEmailTemplate($naam, $training, $type = 'interest') {
+    // Determine content based on type
+    $header_emoji = ($type === 'enrollment') ? '🎉' : (($type === 'incompany') ? '🏢' : '🎯');
+    $header_text = ($type === 'enrollment') ? 'Je bent ingeschreven!' : (($type === 'incompany') ? 'Incompany aanvraag ontvangen!' : 'Interesse geregistreerd!');
+    $welcome_text = ($type === 'enrollment') 
+        ? "Wat fijn dat ik je mag verwelkomen bij <strong>$training</strong>. Ik hoop dat we er samen een mooie cursus van kunnen maken."
+        : (($type === 'incompany') 
+            ? "Wat fijn dat je interesse hebt in een incompany training voor <strong>$training</strong>. Ik neem binnenkort contact met je op om de mogelijkheden te bespreken."
+            : "Wat fijn dat je interesse hebt getoond in <strong>$training</strong>. Zodra er nieuwe data beschikbaar zijn, laat ik het je weten!");
+    
+    $cta_text = ($type === 'enrollment') ? '🚀 Ga naar Cursusmateriaal' : '📧 Neem Contact Op';
+    $cta_url = ($type === 'enrollment') ? 'https://inventijn.nl/login.php' : 'mailto:martijn@inventijn.nl';
+    
+    return '<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>' . $header_text . ' - Inventijn</title>
+    <style>
+        :root {
+            --inventijn-light-pink: #e3a1e5;
+            --inventijn-purple: #b998e4;
+            --inventijn-light-blue: #6b80e8;
+            --inventijn-dark-blue: #3e5cc6;
+            --inventijn-yellow: #F9CB40;
+            --inventijn-orange: #F9A03F;
+            --white: #FFFFFF;
+            --grey-light: #F8FAFC;
+            --grey-medium: #64748B;
+            --grey-dark: #1E293B;
+        }
+
+        body, table, td, p, a, li, blockquote {
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+        }
+        table, td {
+            mso-table-lspace: 0pt;
+            mso-table-rspace: 0pt;
+        }
+        img {
+            -ms-interpolation-mode: bicubic;
+            border: 0;
+            height: auto;
+            line-height: 100%;
+            outline: none;
+            text-decoration: none;
+        }
+
+        .font-display {
+            font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        .font-body {
+            font-family: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-weight: 400;
+            line-height: 1.6;
+        }
+
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: var(--white);
+            font-family: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .header-gradient {
+            background: linear-gradient(135deg, var(--inventijn-dark-blue) 0%, var(--inventijn-light-blue) 50%, var(--inventijn-purple) 100%);
+            padding: 40px 32px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .logo-container {
+            margin-bottom: 24px;
+        }
+        .header-title {
+            color: var(--white);
+            font-size: 28px;
+            margin: 0 0 8px 0;
+        }
+        .header-subtitle {
+            color: rgba(255,255,255,0.9);
+            font-size: 16px;
+            margin: 0;
+        }
+
+        .welcome-section {
+            padding: 40px 32px 32px;
+            background: var(--white);
+        }
+        .welcome-title {
+            color: var(--inventijn-dark-blue);
+            font-size: 24px;
+            margin: 0 0 16px 0;
+            text-align: center;
+        }
+        .welcome-text {
+            color: var(--grey-dark);
+            font-size: 16px;
+            margin: 0 0 24px 0;
+            text-align: center;
+        }
+
+        .course-card {
+            background: linear-gradient(135deg, var(--grey-light) 0%, var(--white) 100%);
+            border: 2px solid var(--inventijn-light-blue);
+            border-radius: 16px;
+            padding: 32px;
+            margin: 32px 0;
+            position: relative;
+            overflow: hidden;
+        }
+        .course-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--inventijn-dark-blue), var(--inventijn-purple), var(--inventijn-light-blue));
+        }
+        .course-title {
+            color: var(--inventijn-dark-blue);
+            font-size: 22px;
+            margin: 0 0 20px 0;
+            text-align: center;
+        }
+
+        .cta-container {
+            text-align: center;
+            margin: 40px 0;
+        }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--inventijn-dark-blue), var(--inventijn-light-blue));
+            color: var(--white) !important;
+            text-decoration: none;
+            padding: 18px 36px;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: 600;
+            box-shadow: 0 4px 16px rgba(62, 92, 198, 0.3);
+        }
+
+        .footer {
+            background: var(--grey-light);
+            padding: 40px 32px;
+            text-align: center;
+            border-top: 1px solid rgba(227, 161, 229, 0.3);
+        }
+        .footer-contact {
+            color: var(--grey-medium);
+            font-size: 14px;
+            margin: 8px 0;
+        }
+        .footer-legal {
+            color: var(--grey-medium);
+            font-size: 12px;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid rgba(100, 116, 139, 0.2);
+        }
+
+        @media screen and (max-width: 600px) {
+            .email-container {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+            .header-gradient {
+                padding: 32px 20px;
+            }
+            .header-title {
+                font-size: 24px;
+            }
+            .welcome-section,
+            .course-card,
+            .footer {
+                padding: 24px 20px;
+            }
+            .course-title {
+                font-size: 20px;
+            }
+            .cta-button {
+                padding: 16px 32px;
+                font-size: 15px;
+            }
+        }
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc;">
+    <div class="email-container">
+        <div class="header-gradient">
+            <div class="logo-container">
+                <img src="https://inventijn.nl/assets/images/logo-pink.svg" alt="Inventijn Logo" style="height: 48px; width: auto;">
+            </div>
+            <h1 class="header-title font-display">' . $header_emoji . ' ' . $header_text . '</h1>
+            <p class="header-subtitle font-body">Welkom bij de volgende stap in je ontwikkeling</p>
+        </div>
+
+        <div class="welcome-section">
+            <h2 class="welcome-title font-display">Hallo ' . $naam . '!</h2>
+            <p class="welcome-text font-body">
+                ' . $welcome_text . '
+            </p>
+        </div>
+
+        <div class="course-card">
+            <h3 class="course-title font-display">📚 ' . $training . '</h3>
+            <p style="text-align: center; color: var(--grey-medium); margin: 0;">
+                Ik neem binnenkort contact met je op voor de volgende stappen.
+            </p>
+        </div>
+
+        <div class="cta-container">
+            <a href="' . $cta_url . '" class="cta-button font-medium">
+                ' . $cta_text . '
+            </a>
+        </div>
+
+        <div class="footer">
+            <div style="margin-bottom: 20px;">
+                <img src="https://inventijn.nl/assets/images/logo.svg" alt="Inventijn" style="height: 32px; width: auto;">
+            </div>
+            <p class="footer-contact font-body">
+                <strong>Inventijn</strong><br>
+                Dr. Hub van Doorneweg 195, 5026 RE Tilburg<br>
+                📧 martijn@inventijn.nl
+            </p>
+            <p class="footer-legal font-body">
+                © 2025 Inventijn. Alle rechten voorbehouden.
+            </p>
+        </div>
+    </div>
+</body>
+</html>';
 }
 
 /**
