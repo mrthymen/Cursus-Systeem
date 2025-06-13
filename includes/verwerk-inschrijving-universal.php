@@ -188,7 +188,7 @@ function getSimpleEmailContent($type, $data) {
     $organisatie = htmlspecialchars($data['organisatie'] ?? '');
     
     // Get full Inventijn branded HTML template
-    $inventijn_template = getInventijnEmailTemplate($naam, $training, $type);
+    $inventijn_template = getInventijnEmailTemplate($naam, $training, $type, $course_data);
     
     $templates = [
         'enrollment' => [
@@ -213,20 +213,70 @@ function getSimpleEmailContent($type, $data) {
 }
 
 /**
- * Get full Inventijn branded email template
+ * Get full Inventijn branded email template v6.3.6
+ * NOW WITH REAL COURSE DATA FOR ENROLLMENTS
  */
-function getInventijnEmailTemplate($naam, $training, $type = 'interest') {
+function getInventijnEmailTemplate($naam, $training, $type = 'interest', $course_data = []) {
     // Determine content based on type
     $header_emoji = ($type === 'enrollment') ? '🎉' : (($type === 'incompany') ? '🏢' : '🎯');
     $header_text = ($type === 'enrollment') ? 'Je bent ingeschreven!' : (($type === 'incompany') ? 'Incompany aanvraag ontvangen!' : 'Interesse geregistreerd!');
-    $welcome_text = ($type === 'enrollment') 
-        ? "Wat fijn dat ik je mag verwelkomen bij <strong>$training</strong>. Ik hoop dat we er samen een mooie cursus van kunnen maken."
-        : (($type === 'incompany') 
-            ? "Wat fijn dat je interesse hebt in een incompany training voor <strong>$training</strong>. Ik neem binnenkort contact met je op om de mogelijkheden te bespreken."
-            : "Wat fijn dat je interesse hebt getoond in <strong>$training</strong>. Zodra er nieuwe data beschikbaar zijn, laat ik het je weten!");
     
+    // Dynamic welcome text
+    if ($type === 'enrollment') {
+        $welcome_text = "Wat fijn dat ik je mag verwelkomen bij <strong>$training</strong>. Ik hoop dat we er samen een mooie cursus van kunnen maken.";
+    } elseif ($type === 'incompany') {
+        $welcome_text = "Wat fijn dat je interesse hebt in een incompany training voor <strong>$training</strong>. Ik neem binnenkort contact met je op om de mogelijkheden te bespreken.";
+    } else {
+        $welcome_text = "Wat fijn dat je interesse hebt getoond in <strong>$training</strong>. Zodra er nieuwe data beschikbaar zijn, laat ik het je weten!";
+    }
+    
+    // Course details section for enrollments
+    $course_details_html = '';
+    if ($type === 'enrollment' && !empty($course_data)) {
+        $course_details_html = '
+        <div style="background: white; border-radius: 12px; padding: 24px; margin: 20px 0; box-shadow: 0 2px 8px rgba(62, 92, 198, 0.1);">
+            <div style="display: flex; align-items: center; margin: 12px 0; padding: 8px 0; border-bottom: 1px solid rgba(227, 161, 229, 0.3);">
+                <span style="width: 24px; margin-right: 12px; font-size: 18px;">📅</span>
+                <span style="font-weight: 500; color: #b998e4; min-width: 80px;">Datum:</span>
+                <span style="color: #1E293B; font-weight: 600;">' . ($course_data['course_date'] ?? 'Wordt nog bekendgemaakt') . '</span>
+            </div>
+            <div style="display: flex; align-items: center; margin: 12px 0; padding: 8px 0; border-bottom: 1px solid rgba(227, 161, 229, 0.3);">
+                <span style="width: 24px; margin-right: 12px; font-size: 18px;">🕒</span>
+                <span style="font-weight: 500; color: #b998e4; min-width: 80px;">Tijd:</span>
+                <span style="color: #1E293B; font-weight: 600;">' . ($course_data['course_time'] ?? 'Wordt nog bekendgemaakt') . '</span>
+            </div>
+            <div style="display: flex; align-items: center; margin: 12px 0; padding: 8px 0;">
+                <span style="width: 24px; margin-right: 12px; font-size: 18px;">📍</span>
+                <span style="font-weight: 500; color: #b998e4; min-width: 80px;">Locatie:</span>
+                <span style="color: #1E293B; font-weight: 600;">' . ($course_data['course_location'] ?? 'Wordt nog bekendgemaakt') . '</span>
+            </div>
+        </div>';
+    }
+    
+    // Access section for enrollments
+    $access_section_html = '';
+    if ($type === 'enrollment' && !empty($course_data['access_key'])) {
+        $access_section_html = '
+        <div style="background: linear-gradient(135deg, #F9CB40, #F9A03F); border-radius: 16px; padding: 32px; margin: 32px 0; text-align: center;">
+            <span style="font-size: 48px; margin-bottom: 16px; display: block;">🔑</span>
+            <h3 style="color: #1E293B; font-size: 20px; margin: 0 0 12px 0;">Jouw Persoonlijke Toegangscode</h3>
+            <div style="background: white; color: #3e5cc6; font-size: 24px; font-weight: 700; padding: 16px 24px; border-radius: 12px; margin: 20px 0; letter-spacing: 2px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                ' . $course_data['access_key'] . '
+            </div>
+            <p style="color: #1E293B; font-size: 14px; margin: 16px 0 0 0; opacity: 0.8;">
+                Bewaar deze code goed - je hebt hem nodig voor toegang tot je cursusmateriaal
+            </p>
+        </div>';
+    }
+    
+    // CTA section 
     $cta_text = ($type === 'enrollment') ? '🚀 Ga naar Cursusmateriaal' : '📧 Neem Contact Op';
-    $cta_url = ($type === 'enrollment') ? 'https://inventijn.nl/login.php' : 'mailto:martijn@inventijn.nl';
+    $cta_url = ($type === 'enrollment' && !empty($course_data['login_url'])) ? $course_data['login_url'] : 'mailto:martijn@inventijn.nl';
+    
+    $cta_note = '';
+    if ($type === 'enrollment' && !empty($course_data['access_start_time'])) {
+        $cta_note = '<p style="margin: 16px 0; color: #64748B; font-size: 14px;">Materiaal wordt beschikbaar vanaf: <strong>' . $course_data['access_start_time'] . '</strong></p>';
+    }
     
     return '<!DOCTYPE html>
 <html lang="nl">
@@ -234,6 +284,7 @@ function getInventijnEmailTemplate($naam, $training, $type = 'interest') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>' . $header_text . ' - Inventijn</title>
+    <!-- CSS same as before -->
     <style>
         :root {
             --inventijn-light-pink: #e3a1e5;
@@ -247,163 +298,34 @@ function getInventijnEmailTemplate($naam, $training, $type = 'interest') {
             --grey-medium: #64748B;
             --grey-dark: #1E293B;
         }
-
-        body, table, td, p, a, li, blockquote {
-            -webkit-text-size-adjust: 100%;
-            -ms-text-size-adjust: 100%;
-        }
-        table, td {
-            mso-table-lspace: 0pt;
-            mso-table-rspace: 0pt;
-        }
-        img {
-            -ms-interpolation-mode: bicubic;
-            border: 0;
-            height: auto;
-            line-height: 100%;
-            outline: none;
-            text-decoration: none;
-        }
-
-        .font-display {
-            font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            font-weight: 600;
-            line-height: 1.2;
-        }
-        .font-body {
-            font-family: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            font-weight: 400;
-            line-height: 1.6;
-        }
-
-        .email-container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: var(--white);
-            font-family: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        }
-
-        .header-gradient {
-            background: linear-gradient(135deg, var(--inventijn-dark-blue) 0%, var(--inventijn-light-blue) 50%, var(--inventijn-purple) 100%);
-            padding: 40px 32px;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
-        }
-        .logo-container {
-            margin-bottom: 24px;
-        }
-        .header-title {
-            color: var(--white);
-            font-size: 28px;
-            margin: 0 0 8px 0;
-        }
-        .header-subtitle {
-            color: rgba(255,255,255,0.9);
-            font-size: 16px;
-            margin: 0;
-        }
-
-        .welcome-section {
-            padding: 40px 32px 32px;
-            background: var(--white);
-        }
-        .welcome-title {
-            color: var(--inventijn-dark-blue);
-            font-size: 24px;
-            margin: 0 0 16px 0;
-            text-align: center;
-        }
-        .welcome-text {
-            color: var(--grey-dark);
-            font-size: 16px;
-            margin: 0 0 24px 0;
-            text-align: center;
-        }
-
-        .course-card {
-            background: linear-gradient(135deg, var(--grey-light) 0%, var(--white) 100%);
-            border: 2px solid var(--inventijn-light-blue);
-            border-radius: 16px;
-            padding: 32px;
-            margin: 32px 0;
-            position: relative;
-            overflow: hidden;
-        }
-        .course-card::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, var(--inventijn-dark-blue), var(--inventijn-purple), var(--inventijn-light-blue));
-        }
-        .course-title {
-            color: var(--inventijn-dark-blue);
-            font-size: 22px;
-            margin: 0 0 20px 0;
-            text-align: center;
-        }
-
-        .cta-container {
-            text-align: center;
-            margin: 40px 0;
-        }
-        .cta-button {
-            display: inline-block;
-            background: linear-gradient(135deg, var(--inventijn-dark-blue), var(--inventijn-light-blue));
-            color: var(--white) !important;
-            text-decoration: none;
-            padding: 18px 36px;
-            border-radius: 50px;
-            font-size: 16px;
-            font-weight: 600;
-            box-shadow: 0 4px 16px rgba(62, 92, 198, 0.3);
-        }
-
-        .footer {
-            background: var(--grey-light);
-            padding: 40px 32px;
-            text-align: center;
-            border-top: 1px solid rgba(227, 161, 229, 0.3);
-        }
-        .footer-contact {
-            color: var(--grey-medium);
-            font-size: 14px;
-            margin: 8px 0;
-        }
-        .footer-legal {
-            color: var(--grey-medium);
-            font-size: 12px;
-            margin-top: 24px;
-            padding-top: 24px;
-            border-top: 1px solid rgba(100, 116, 139, 0.2);
-        }
-
+        body, table, td, p, a, li, blockquote { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+        .font-display { font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: 600; line-height: 1.2; }
+        .font-body { font-family: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: 400; line-height: 1.6; }
+        .email-container { max-width: 600px; margin: 0 auto; background: var(--white); font-family: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .header-gradient { background: linear-gradient(135deg, var(--inventijn-dark-blue) 0%, var(--inventijn-light-blue) 50%, var(--inventijn-purple) 100%); padding: 40px 32px; text-align: center; position: relative; overflow: hidden; }
+        .logo-container { margin-bottom: 24px; }
+        .header-title { color: var(--white); font-size: 28px; margin: 0 0 8px 0; }
+        .header-subtitle { color: rgba(255,255,255,0.9); font-size: 16px; margin: 0; }
+        .welcome-section { padding: 40px 32px 32px; background: var(--white); }
+        .welcome-title { color: var(--inventijn-dark-blue); font-size: 24px; margin: 0 0 16px 0; text-align: center; }
+        .welcome-text { color: var(--grey-dark); font-size: 16px; margin: 0 0 24px 0; text-align: center; }
+        .course-card { background: linear-gradient(135deg, var(--grey-light) 0%, var(--white) 100%); border: 2px solid var(--inventijn-light-blue); border-radius: 16px; padding: 32px; margin: 32px 0; position: relative; overflow: hidden; }
+        .course-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, var(--inventijn-dark-blue), var(--inventijn-purple), var(--inventijn-light-blue)); }
+        .course-title { color: var(--inventijn-dark-blue); font-size: 22px; margin: 0 0 20px 0; text-align: center; }
+        .cta-container { text-align: center; margin: 40px 0; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, var(--inventijn-dark-blue), var(--inventijn-light-blue)); color: var(--white) !important; text-decoration: none; padding: 18px 36px; border-radius: 50px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 16px rgba(62, 92, 198, 0.3); }
+        .footer { background: var(--grey-light); padding: 40px 32px; text-align: center; border-top: 1px solid rgba(227, 161, 229, 0.3); }
+        .footer-contact { color: var(--grey-medium); font-size: 14px; margin: 8px 0; }
+        .footer-legal { color: var(--grey-medium); font-size: 12px; margin-top: 24px; padding-top: 24px; border-top: 1px solid rgba(100, 116, 139, 0.2); }
         @media screen and (max-width: 600px) {
-            .email-container {
-                width: 100% !important;
-                max-width: 100% !important;
-            }
-            .header-gradient {
-                padding: 32px 20px;
-            }
-            .header-title {
-                font-size: 24px;
-            }
-            .welcome-section,
-            .course-card,
-            .footer {
-                padding: 24px 20px;
-            }
-            .course-title {
-                font-size: 20px;
-            }
-            .cta-button {
-                padding: 16px 32px;
-                font-size: 15px;
-            }
+            .email-container { width: 100% !important; max-width: 100% !important; }
+            .header-gradient { padding: 32px 20px; }
+            .header-title { font-size: 24px; }
+            .welcome-section, .course-card, .footer { padding: 24px 20px; }
+            .course-title { font-size: 20px; }
+            .cta-button { padding: 16px 32px; font-size: 15px; }
         }
     </style>
 </head>
@@ -419,22 +341,20 @@ function getInventijnEmailTemplate($naam, $training, $type = 'interest') {
 
         <div class="welcome-section">
             <h2 class="welcome-title font-display">Hallo ' . $naam . '!</h2>
-            <p class="welcome-text font-body">
-                ' . $welcome_text . '
-            </p>
+            <p class="welcome-text font-body">' . $welcome_text . '</p>
         </div>
 
         <div class="course-card">
             <h3 class="course-title font-display">📚 ' . $training . '</h3>
-            <p style="text-align: center; color: var(--grey-medium); margin: 0;">
-                Ik neem binnenkort contact met je op voor de volgende stappen.
-            </p>
+            ' . $course_details_html . '
+            ' . ($type !== 'enrollment' ? '<p style="text-align: center; color: var(--grey-medium); margin: 0;">Ik neem binnenkort contact met je op voor de volgende stappen.</p>' : '') . '
         </div>
 
+        ' . $access_section_html . '
+
         <div class="cta-container">
-            <a href="' . $cta_url . '" class="cta-button font-medium">
-                ' . $cta_text . '
-            </a>
+            <a href="' . $cta_url . '" class="cta-button font-medium">' . $cta_text . '</a>
+            ' . $cta_note . '
         </div>
 
         <div class="footer">
@@ -446,9 +366,7 @@ function getInventijnEmailTemplate($naam, $training, $type = 'interest') {
                 Dr. Hub van Doorneweg 195, 5026 RE Tilburg<br>
                 📧 martijn@inventijn.nl
             </p>
-            <p class="footer-legal font-body">
-                © 2025 Inventijn. Alle rechten voorbehouden.
-            </p>
+            <p class="footer-legal font-body">© 2025 Inventijn. Alle rechten voorbehouden.</p>
         </div>
     </div>
 </body>
