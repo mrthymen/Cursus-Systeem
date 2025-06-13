@@ -291,31 +291,33 @@ $stats = [
         <div>
             <h3><i class="fas fa-users"></i> Gebruikersbeheer</h3>
         </div>
-        <button onclick="openUserModal()" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Nieuwe Gebruiker
-        </button>
-          <button class="btn btn-secondary" onclick="showBulkImportModal()">
-            <i class="fas fa-upload"></i> Bulk Import
-        </button>
+        <div style="display: flex; gap: var(--space-2);">
+            <button onclick="openUserModal()" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Nieuwe Gebruiker
+            </button>
+            <button class="btn btn-secondary" onclick="showBulkImportModal()">
+                <i class="fas fa-upload"></i> Bulk Import
+            </button>
+        </div>
     </div>
-     <div class="course-essentials">
-                        <div class="essential-item">
-                            <div class="essential-label"><i class="fas fa-users"></i> Totaal Gebruikers</div>
-                            <div class="essential-value"><?= number_format($stats['total_users']) ?></div>
-                        </div>
-                        <div class="essential-item">
-                            <div class="essential-label"><i class="fas fa-check-circle"></i> Actieve Gebruikers</div>
-                            <div class="essential-value"><?= number_format($stats['active_users']) ?></div>
-                        </div>
-                        <div class="essential-item">
-                            <div class="essential-label"><i class="fas fa-book"></i> Gem. Cursussen/User</div>
-                            <div class="essential-value"> <?= $stats['avg_courses'] ?></div>
-                        </div>
-                        <div class="essential-item">
-                            <div class="essential-label"><i class="fas fa-euro-sign"></i> Betaalde Inschrijvingen</div>
-                            <div class="essential-value"> <?= number_format($stats['paid_enrollments']) ?></div>
-                        </div>
-                    </div>
+    <div class="course-essentials">
+        <div class="essential-item">
+            <div class="essential-label"><i class="fas fa-users"></i> Totaal Gebruikers</div>
+            <div class="essential-value"><?= number_format($stats['total_users']) ?></div>
+        </div>
+        <div class="essential-item">
+            <div class="essential-label"><i class="fas fa-check-circle"></i> Actieve Gebruikers</div>
+            <div class="essential-value"><?= number_format($stats['active_users']) ?></div>
+        </div>
+        <div class="essential-item">
+            <div class="essential-label"><i class="fas fa-book"></i> Gem. Cursussen/User</div>
+            <div class="essential-value"><?= $stats['avg_courses'] ?></div>
+        </div>
+        <div class="essential-item">
+            <div class="essential-label"><i class="fas fa-euro-sign"></i> Betaalde Inschrijvingen</div>
+            <div class="essential-value"><?= number_format($stats['paid_enrollments']) ?></div>
+        </div>
+    </div>
 </div>
 
 <!-- Messages -->
