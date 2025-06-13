@@ -1,8 +1,8 @@
 <?php
 /**
- * Cursus Systeem - Course Management v6.4.0
- * Modal-based template management with smart course overview
- * Features: Modal forms, Smart participant display, Enhanced course metrics
+ * Cursus Systeem - Course Management v6.4.1
+ * Modal-based template management with smart course overview & AJAX editing
+ * Features: Modal forms, Smart participant display, Enhanced course metrics, AJAX edit
  * Updated: 2025-06-13
  * Changes: 
  * v6.4.0 - Moved forms to modals for better UX
@@ -10,6 +10,9 @@
  * v6.4.0 - Added participant details per course
  * v6.4.0 - Removed distracting booking URL blocks
  * v6.4.0 - Added quick action buttons in course rows
+ * v6.4.1 - Added AJAX editing functionality for modals
+ * v6.4.1 - Smart URL handling for direct edit links
+ * v6.4.1 - Enhanced error handling and user feedback
  */
 
 session_start();
@@ -38,6 +41,35 @@ try {
     
 } catch (Exception $e) {
     die('Database verbinding mislukt: ' . $e->getMessage());
+}
+
+// Handle AJAX requests for editing
+if (isset($_GET['ajax']) && isset($_GET['action'])) {
+    header('Content-Type: application/json');
+    
+    switch ($_GET['action']) {
+        case 'get_template':
+            if (isset($_GET['id']) && is_numeric($_GET['id'])) {
+                $template = getTemplateById($pdo, $_GET['id']);
+                echo json_encode($template ?: ['error' => 'Template niet gevonden']);
+            } else {
+                echo json_encode(['error' => 'Invalid ID']);
+            }
+            break;
+            
+        case 'get_course':
+            if (isset($_GET['id']) && is_numeric($_GET['id'])) {
+                $course = getCourseById($pdo, $_GET['id']);
+                echo json_encode($course ?: ['error' => 'Cursus niet gevonden']);
+            } else {
+                echo json_encode(['error' => 'Invalid ID']);
+            }
+            break;
+            
+        default:
+            echo json_encode(['error' => 'Unknown action']);
+    }
+    exit;
 }
 
 // Handle form submissions
@@ -586,7 +618,7 @@ function formatCourseDate($date) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cursus & Template Beheer - Cursus Systeem v6.4.0</title>
+    <title>Cursus & Template Beheer - Cursus Systeem v6.4.1</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         /* Enhanced v6.4 Design System with Modal Support */
@@ -1728,10 +1760,45 @@ function formatCourseDate($date) {
         document.getElementById('templateSubmitText').textContent = 'Template Aanmaken';
     }
 
-    function editTemplate(templateId) {
-        // This would normally fetch template data via AJAX
-        // For now, redirect to edit page
-        window.location.href = 'courses.php?tab=templates&edit_template=' + templateId;
+    async function editTemplate(templateId) {
+        try {
+            showNotification('Template gegevens laden...', 'info');
+            
+            const response = await fetch(`courses.php?ajax=1&action=get_template&id=${templateId}`);
+            const template = await response.json();
+            
+            if (template.error) {
+                throw new Error(template.error);
+            }
+            
+            // Fill form with template data
+            document.getElementById('templateAction').value = 'update_template';
+            document.getElementById('templateId').value = template.id;
+            document.getElementById('template_key').value = template.template_key || '';
+            document.getElementById('display_name').value = template.display_name || '';
+            document.getElementById('category').value = template.category || '';
+            document.getElementById('subcategory').value = template.subcategory || '';
+            document.getElementById('default_description').value = template.default_description || '';
+            document.getElementById('default_target_audience').value = template.default_target_audience || '';
+            document.getElementById('default_learning_goals').value = template.default_learning_goals || '';
+            document.getElementById('default_materials').value = template.default_materials || '';
+            document.getElementById('default_duration_hours').value = template.default_duration_hours || '8';
+            document.getElementById('default_max_participants').value = template.default_max_participants || '20';
+            document.getElementById('booking_form_url').value = template.booking_form_url || '';
+            document.getElementById('incompany_available').checked = template.incompany_available == '1';
+            
+            // Update modal titles
+            document.getElementById('templateModalTitle').textContent = 'Template Bewerken';
+            document.getElementById('templateSubmitText').textContent = 'Template Bijwerken';
+            
+            // Open modal
+            openModal('templateModal');
+            showNotification('Template geladen!', 'success');
+            
+        } catch (error) {
+            console.error('Error loading template:', error);
+            showNotification('Fout bij laden template: ' + error.message, 'error');
+        }
     }
 
     // Course Functions
@@ -1745,10 +1812,59 @@ function formatCourseDate($date) {
         updateLocationDescription();
     }
 
-    function editCourse(courseId) {
-        // This would normally fetch course data via AJAX
-        // For now, redirect to edit page
-        window.location.href = 'courses.php?edit=' + courseId;
+    async function editCourse(courseId) {
+        try {
+            showNotification('Cursus gegevens laden...', 'info');
+            
+            const response = await fetch(`courses.php?ajax=1&action=get_course&id=${courseId}`);
+            const course = await response.json();
+            
+            if (course.error) {
+                throw new Error(course.error);
+            }
+            
+            // Fill form with course data
+            document.getElementById('courseAction').value = 'update_course';
+            document.getElementById('courseId').value = course.id;
+            document.getElementById('course_template').value = course.course_template || 'general';
+            document.getElementById('course_name').value = course.name || '';
+            document.getElementById('instructor').value = course.instructor_name || '';
+            document.getElementById('course_category').value = course.category || 'algemeen';
+            document.getElementById('course_subcategory').value = course.subcategory || '';
+            document.getElementById('short_description').value = course.short_description || '';
+            document.getElementById('course_description').value = course.description || '';
+            document.getElementById('target_audience').value = course.target_audience || '';
+            document.getElementById('learning_goals').value = course.learning_goals || '';
+            document.getElementById('materials_included').value = course.materials_included || '';
+            
+            // Handle date formatting for input field
+            if (course.course_date) {
+                const date = new Date(course.course_date);
+                const formattedDate = date.toISOString().split('T')[0];
+                document.getElementById('course_date').value = formattedDate;
+            }
+            
+            document.getElementById('course_time').value = course.time_range || '';
+            document.getElementById('location').value = course.location || '';
+            document.getElementById('max_participants').value = course.max_participants || '20';
+            document.getElementById('price').value = course.price || '';
+            document.getElementById('course_incompany_available').checked = course.incompany_available == '1';
+            
+            // Update location description
+            updateLocationDescription();
+            
+            // Update modal titles
+            document.getElementById('courseModalTitle').textContent = 'Cursus Bewerken';
+            document.getElementById('courseSubmitText').textContent = 'Cursus Bijwerken';
+            
+            // Open modal
+            openModal('courseModal');
+            showNotification('Cursus geladen!', 'success');
+            
+        } catch (error) {
+            console.error('Error loading course:', error);
+            showNotification('Fout bij laden cursus: ' + error.message, 'error');
+        }
     }
 
     // Enhanced template auto-fill functionality
@@ -1799,6 +1915,23 @@ function formatCourseDate($date) {
         if (locationSelect) {
             locationSelect.addEventListener('change', updateLocationDescription);
             updateLocationDescription(); // Initial call
+        }
+
+        // Auto-open edit modals if edit parameters are present
+        const urlParams = new URLSearchParams(window.location.search);
+        const editTemplate = urlParams.get('edit_template');
+        const editCourse = urlParams.get('edit');
+        
+        if (editTemplate) {
+            editTemplate(parseInt(editTemplate));
+            // Clean URL without page reload
+            const newUrl = window.location.pathname + (urlParams.get('tab') ? '?tab=' + urlParams.get('tab') : '');
+            window.history.replaceState({}, '', newUrl);
+        } else if (editCourse) {
+            editCourse(parseInt(editCourse));
+            // Clean URL without page reload
+            const newUrl = window.location.pathname + (urlParams.get('tab') ? '?tab=' + urlParams.get('tab') : '');
+            window.history.replaceState({}, '', newUrl);
         }
 
         // Auto-generate template key from display name
