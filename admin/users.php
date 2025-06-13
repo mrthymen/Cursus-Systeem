@@ -294,6 +294,9 @@ $stats = [
         <button onclick="openUserModal()" class="btn btn-primary">
             <i class="fas fa-plus"></i> Nieuwe Gebruiker
         </button>
+          <button class="btn btn-secondary" onclick="showBulkImportModal()">
+            <i class="fas fa-upload"></i> Bulk Import
+        </button>
     </div>
      <div class="course-essentials">
                         <div class="essential-item">
@@ -344,10 +347,6 @@ $stats = [
             <option value="active" <?= $status === 'active' ? 'selected' : '' ?>>Actieve gebruikers</option>
             <option value="inactive" <?= $status === 'inactive' ? 'selected' : '' ?>>Inactieve gebruikers</option>
         </select>
-        
-        <button class="btn btn-secondary" onclick="showBulkImportModal()">
-            <i class="fas fa-upload"></i> Bulk Import
-        </button>
     </div>
 </div>
 
