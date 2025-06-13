@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Beheer - Unified System FIXED v6.4.1
+ * Cursus Beheer - Unified System FIXED v6.4.2
  * Fixed version met echte database functies
  * Converted from original courses.php to unified system
  * Updated: 2025-06-13
@@ -9,6 +9,10 @@
  * v6.4.1 - FIXED: Added real database functions from original courses.php
  * v6.4.1 - FIXED: Restored all course/template data display
  * v6.4.1 - FIXED: Working AJAX edit functionality
+ * v6.4.2 - FIXED: Replaced missing generateEditFunction with real edit functions
+ * v6.4.2 - FIXED: Added working editTemplate() and editCourse() functions
+ * v6.4.2 - FIXED: Added modal helper functions (openModal, closeModal)
+ * v6.4.2 - FIXED: Improved fillTemplateData with better UX
  */
 
 session_start();
@@ -361,21 +365,107 @@ function handleCreateTemplate($pdo) {
 }
 
 function handleUpdateTemplate($pdo) {
-    // Similar implementation to create but for updates
-    $_SESSION['message'] = 'Template update functionaliteit komt binnenkort beschikbaar';
-    $_SESSION['message_type'] = 'info';
+    try {
+        $stmt = $pdo->prepare("
+            UPDATE course_templates SET
+                template_key = ?, display_name = ?, category = ?, subcategory = ?,
+                default_description = ?, default_target_audience = ?, default_learning_goals = ?,
+                default_materials = ?, default_duration_hours = ?, default_max_participants = ?,
+                booking_form_url = ?, incompany_available = ?
+            WHERE id = ?
+        ");
+        
+        $result = $stmt->execute([
+            $_POST['template_key'],
+            $_POST['display_name'],
+            $_POST['category'],
+            $_POST['subcategory'] ?? '',
+            $_POST['default_description'],
+            $_POST['default_target_audience'] ?? '',
+            $_POST['default_learning_goals'] ?? '',
+            $_POST['default_materials'] ?? '',
+            (int)($_POST['default_duration_hours'] ?? 8),
+            (int)($_POST['default_max_participants'] ?? 20),
+            $_POST['booking_form_url'] ?? '',
+            isset($_POST['incompany_available']) ? 1 : 0,
+            (int)$_POST['template_id']
+        ]);
+        
+        if ($result) {
+            $_SESSION['message'] = 'Template succesvol bijgewerkt!';
+            $_SESSION['message_type'] = 'success';
+        }
+    } catch (Exception $e) {
+        $_SESSION['message'] = 'Fout bij bijwerken template: ' . $e->getMessage();
+        $_SESSION['message_type'] = 'error';
+    }
 }
 
 function handleDeleteTemplate($pdo) {
-    // Similar implementation for deletes
-    $_SESSION['message'] = 'Template delete functionaliteit komt binnenkort beschikbaar';
-    $_SESSION['message_type'] = 'info';
+    try {
+        $template_id = (int)$_POST['template_id'];
+        
+        // Check if template is used by courses
+        $usage_count = $pdo->prepare("SELECT COUNT(*) FROM courses WHERE course_template = (SELECT template_key FROM course_templates WHERE id = ?)");
+        $usage_count->execute([$template_id]);
+        $count = $usage_count->fetchColumn();
+        
+        if ($count > 0) {
+            $_SESSION['message'] = 'Kan template met gekoppelde cursussen niet verwijderen.';
+            $_SESSION['message_type'] = 'error';
+        } else {
+            $stmt = $pdo->prepare("DELETE FROM course_templates WHERE id = ?");
+            $result = $stmt->execute([$template_id]);
+            
+            if ($result) {
+                $_SESSION['message'] = 'Template succesvol verwijderd!';
+                $_SESSION['message_type'] = 'success';
+            }
+        }
+    } catch (Exception $e) {
+        $_SESSION['message'] = 'Fout bij verwijderen template: ' . $e->getMessage();
+        $_SESSION['message_type'] = 'error';
+    }
 }
 
 function handleDuplicateTemplate($pdo) {
-    // Similar implementation for duplicates
-    $_SESSION['message'] = 'Template duplicate functionaliteit komt binnenkort beschikbaar';
-    $_SESSION['message_type'] = 'info';
+    try {
+        // Get original template
+        $stmt = $pdo->prepare("SELECT * FROM course_templates WHERE id = ?");
+        $stmt->execute([(int)$_POST['template_id']]);
+        $template = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($template) {
+            // Create duplicate with modified key and name
+            $new_key = $template['template_key'] . '-copy';
+            $new_name = $template['display_name'] . ' (Kopie)';
+            
+            $stmt = $pdo->prepare("
+                INSERT INTO course_templates (
+                    template_key, display_name, category, subcategory,
+                    default_description, default_target_audience, default_learning_goals,
+                    default_materials, default_duration_hours, default_max_participants,
+                    booking_form_url, incompany_available, active, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+            ");
+            
+            $result = $stmt->execute([
+                $new_key, $new_name, $template['category'], $template['subcategory'],
+                $template['default_description'], $template['default_target_audience'], 
+                $template['default_learning_goals'], $template['default_materials'],
+                $template['default_duration_hours'], $template['default_max_participants'],
+                $template['booking_form_url'], $template['incompany_available']
+            ]);
+            
+            if ($result) {
+                $_SESSION['message'] = 'Template succesvol gedupliceerd!';
+                $_SESSION['message_type'] = 'success';
+            }
+        }
+    } catch (Exception $e) {
+        $_SESSION['message'] = 'Fout bij dupliceren template: ' . $e->getMessage();
+        $_SESSION['message_type'] = 'error';
+    }
 }
 
 function handleCreateCourse($pdo) {
@@ -1059,12 +1149,6 @@ function renderActionGroup($entity, $item, $preventDelete = false) {
 <script>
 // Page-specific JavaScript
 document.addEventListener('DOMContentLoaded', function() {
-    // Generate edit and reset functions for this page
-    generateEditFunction('template');
-    generateEditFunction('course');
-    generateResetFunction('template');
-    generateResetFunction('course');
-    
     // Initialize location description
     updateLocationDescription();
     
@@ -1094,25 +1178,175 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// Template Edit Function
+window.editTemplate = async function(templateId) {
+    try {
+        const response = await fetch(`?ajax=1&action=get_template&id=${templateId}`);
+        const template = await response.json();
+        
+        if (template.error) {
+            alert('❌ ' + template.error);
+            return;
+        }
+        
+        // Fill form fields
+        document.getElementById('templateAction').value = 'update_template';
+        document.getElementById('templateId').value = template.id;
+        document.getElementById('template_key').value = template.template_key || '';
+        document.getElementById('display_name').value = template.display_name || '';
+        document.getElementById('category').value = template.category || '';
+        document.getElementById('subcategory').value = template.subcategory || '';
+        document.getElementById('default_description').value = template.default_description || '';
+        document.getElementById('default_target_audience').value = template.default_target_audience || '';
+        document.getElementById('default_learning_goals').value = template.default_learning_goals || '';
+        document.getElementById('default_materials').value = template.default_materials || '';
+        document.getElementById('default_duration_hours').value = template.default_duration_hours || 8;
+        document.getElementById('default_max_participants').value = template.default_max_participants || 20;
+        document.getElementById('booking_form_url').value = template.booking_form_url || '';
+        document.getElementById('incompany_available').checked = template.incompany_available == 1;
+        
+        // Update modal title and submit button
+        document.getElementById('templateModalTitle').textContent = 'Template Bewerken';
+        document.getElementById('templateSubmitText').textContent = 'Template Bijwerken';
+        
+        // Open modal
+        openModal('templateModal');
+        
+    } catch (error) {
+        alert('❌ Fout bij ophalen template: ' + error.message);
+    }
+};
+
+// Course Edit Function
+window.editCourse = async function(courseId) {
+    try {
+        const response = await fetch(`?ajax=1&action=get_course&id=${courseId}`);
+        const course = await response.json();
+        
+        if (course.error) {
+            alert('❌ ' + course.error);
+            return;
+        }
+        
+        // Fill form fields
+        document.getElementById('courseAction').value = 'update_course';
+        document.getElementById('courseId').value = course.id;
+        document.getElementById('course_template').value = course.course_template || 'general';
+        document.getElementById('course_name').value = course.name || '';
+        document.getElementById('instructor').value = course.instructor_name || '';
+        document.getElementById('course_category').value = course.category || '';
+        document.getElementById('course_subcategory').value = course.subcategory || '';
+        document.getElementById('short_description').value = course.short_description || '';
+        document.getElementById('course_description').value = course.description || '';
+        document.getElementById('target_audience').value = course.target_audience || '';
+        document.getElementById('learning_goals').value = course.learning_goals || '';
+        document.getElementById('materials_included').value = course.materials_included || '';
+        document.getElementById('course_date').value = course.course_date || '';
+        document.getElementById('course_time').value = course.time_range || '';
+        document.getElementById('location').value = course.location || '';
+        document.getElementById('max_participants').value = course.max_participants || 20;
+        document.getElementById('price').value = course.price || 0;
+        document.getElementById('course_incompany_available').checked = course.incompany_available == 1;
+        
+        // Update modal title and submit button
+        document.getElementById('courseModalTitle').textContent = 'Cursus Bewerken';
+        document.getElementById('courseSubmitText').textContent = 'Cursus Bijwerken';
+        
+        // Update location description
+        updateLocationDescription();
+        
+        // Open modal
+        openModal('courseModal');
+        
+    } catch (error) {
+        alert('❌ Fout bij ophalen cursus: ' + error.message);
+    }
+};
+
+// Reset functions for new items
+window.resetTemplateForm = function() {
+    document.getElementById('templateForm').reset();
+    document.getElementById('templateAction').value = 'create_template';
+    document.getElementById('templateId').value = '';
+    document.getElementById('templateModalTitle').textContent = 'Nieuwe Template Aanmaken';
+    document.getElementById('templateSubmitText').textContent = 'Template Aanmaken';
+};
+
+window.resetCourseForm = function() {
+    document.getElementById('courseForm').reset();
+    document.getElementById('courseAction').value = 'create_course';
+    document.getElementById('courseId').value = '';
+    document.getElementById('courseModalTitle').textContent = 'Nieuwe Cursus Aanmaken';
+    document.getElementById('courseSubmitText').textContent = 'Cursus Aanmaken';
+    updateLocationDescription();
+};
+
+// Update location description helper
+window.updateLocationDescription = function() {
+    const locationSelect = document.getElementById('location');
+    const descriptionElement = document.getElementById('location-description');
+    
+    if (locationSelect && descriptionElement) {
+        const selectedOption = locationSelect.selectedOptions[0];
+        const description = selectedOption ? selectedOption.dataset.description : '';
+        descriptionElement.textContent = description || '';
+    }
+};
+
+// Modal helper functions
+window.openModal = function(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'block';
+        
+        // Reset form if it's a new item
+        if (modalId === 'templateModal' && !document.getElementById('templateId').value) {
+            resetTemplateForm();
+        }
+        if (modalId === 'courseModal' && !document.getElementById('courseId').value) {
+            resetCourseForm();
+        }
+    }
+};
+
+window.closeModal = function(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'none';
+    }
+};
+
 // Page-specific template filling function
 window.fillTemplateData = function(templateKey) {
-    if (templateKey === 'general') return;
+    if (templateKey === 'general') {
+        // Clear fields when general is selected
+        document.getElementById('course_category').value = 'algemeen';
+        document.getElementById('course_subcategory').value = '';
+        document.getElementById('course_description').value = '';
+        document.getElementById('short_description').value = '';
+        document.getElementById('target_audience').value = '';
+        document.getElementById('learning_goals').value = '';
+        document.getElementById('materials_included').value = '';
+        document.getElementById('max_participants').value = '20';
+        return;
+    }
     
     const option = document.querySelector(`option[value="${templateKey}"]`);
     if (!option) return;
     
     // Auto-fill fields from template data
     const fields = {
-        course_category: option.dataset.category || '',
+        course_category: option.dataset.category || 'algemeen',
         course_subcategory: option.dataset.subcategory || '',
         course_description: option.dataset.description || '',
-        short_description: option.dataset.description || '',
+        short_description: option.dataset.description ? option.dataset.description.substring(0, 150) + '...' : '',
         target_audience: option.dataset.target || '',
         learning_goals: option.dataset.goals || '',
         materials_included: option.dataset.materials || '',
         max_participants: option.dataset.maxparticipants || '20'
     };
     
+    // Fill the form fields
     Object.keys(fields).forEach(fieldName => {
         const field = document.getElementById(fieldName);
         if (field && fields[fieldName]) {
@@ -1120,8 +1354,14 @@ window.fillTemplateData = function(templateKey) {
         }
     });
     
-    // Show confirmation
-    showNotification('Template gegevens ingevuld!', 'success');
+    // Show subtle confirmation
+    const templateSelect = document.getElementById('course_template');
+    if (templateSelect) {
+        templateSelect.style.background = '#e8f5e8';
+        setTimeout(() => {
+            templateSelect.style.background = '';
+        }, 1000);
+    }
 };
 </script>
 
