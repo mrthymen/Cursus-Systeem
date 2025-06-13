@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Beheer - Unified System FIXED v6.4.6
+ * Cursus Beheer - Unified System FIXED v6.4.7
  * Fixed version met echte database functies
  * Converted from original courses.php to unified system
  * Updated: 2025-06-13
@@ -22,45 +22,42 @@
  * v6.4.5 - FIXED: Added keyboard shortcuts and click-outside-to-close functionality
  * v6.4.6 - FIXED: Added missing helper functions for admin_modals.php integration
  * v6.4.6 - FIXED: Using shared generateEditFunction() with proper helper function support
+ * v6.4.7 - CRITICAL FIX: Moved AJAX handling to TOP of file before any HTML output
+ * v6.4.7 - FIXED: Prevented admin_header.php from breaking AJAX JSON responses
  */
 
 session_start();
 
-// Set page title for header
-$page_title = 'Cursus & Template Beheer';
-
-// Include unified header
-require_once 'admin_header.php';
-
-// Include config with error handling
-if (!file_exists('../includes/config.php')) {
-    die('Config bestand niet gevonden. Zorg ervoor dat config.php bestaat in includes/ directory.');
-}
-require_once '../includes/config.php';
-
-// Get database connection
-try {
-    $pdo = getDatabase();
-    
-    // Test database connection and verify table structure
-    $test_query = $pdo->query("SHOW TABLES LIKE 'courses'");
-    if (!$test_query->fetch()) {
-        throw new Exception('Cursus tabel bestaat niet. Voer database setup uit.');
-    }
-    
-} catch (Exception $e) {
-    die('Database verbinding mislukt: ' . $e->getMessage());
-}
-
-// Handle AJAX requests for editing
+// CRITICAL: Handle AJAX requests FIRST before any HTML output
 if (isset($_GET['ajax']) && isset($_GET['action'])) {
+    // Include config for database connection
+    if (!file_exists('../includes/config.php')) {
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Config bestand niet gevonden']);
+        exit;
+    }
+    require_once '../includes/config.php';
+
+    // Get database connection
+    try {
+        $pdo = getDatabase();
+    } catch (Exception $e) {
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Database verbinding mislukt: ' . $e->getMessage()]);
+        exit;
+    }
+
+    // Set JSON header
     header('Content-Type: application/json');
     
     try {
         switch ($_GET['action']) {
             case 'get_template':
                 if (isset($_GET['id']) && is_numeric($_GET['id'])) {
-                    $template = getTemplateById($pdo, $_GET['id']);
+                    $stmt = $pdo->prepare("SELECT * FROM course_templates WHERE id = ?");
+                    $stmt->execute([$_GET['id']]);
+                    $template = $stmt->fetch(PDO::FETCH_ASSOC);
+                    
                     if ($template) {
                         echo json_encode($template);
                     } else {
@@ -73,7 +70,10 @@ if (isset($_GET['ajax']) && isset($_GET['action'])) {
                 
             case 'get_course':
                 if (isset($_GET['id']) && is_numeric($_GET['id'])) {
-                    $course = getCourseById($pdo, $_GET['id']);
+                    $stmt = $pdo->prepare("SELECT * FROM courses WHERE id = ?");
+                    $stmt->execute([$_GET['id']]);
+                    $course = $stmt->fetch(PDO::FETCH_ASSOC);
+                    
                     if ($course) {
                         echo json_encode($course);
                     } else {
@@ -94,7 +94,31 @@ if (isset($_GET['ajax']) && isset($_GET['action'])) {
     } catch (Exception $e) {
         echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
     }
-    exit;
+    exit; // CRITICAL: Exit immediately after AJAX response
+}
+
+// NOW include HTML header and continue with normal page rendering
+$page_title = 'Cursus & Template Beheer';
+require_once 'admin_header.php';
+
+// Include config with error handling
+if (!file_exists('../includes/config.php')) {
+    die('Config bestand niet gevonden. Zorg ervoor dat config.php bestaat in includes/ directory.');
+}
+require_once '../includes/config.php';
+
+// Get database connection
+try {
+    $pdo = getDatabase();
+    
+    // Test database connection and verify table structure
+    $test_query = $pdo->query("SHOW TABLES LIKE 'courses'");
+    if (!$test_query->fetch()) {
+        throw new Exception('Cursus tabel bestaat niet. Voer database setup uit.');
+    }
+    
+} catch (Exception $e) {
+    die('Database verbinding mislukt: ' . $e->getMessage());
 }
 
 // Handle form submissions
