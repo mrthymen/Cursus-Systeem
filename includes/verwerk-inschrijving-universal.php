@@ -424,26 +424,80 @@ function createOrGetUser($pdo, $naam, $email, $telefoon = '', $organisatie = '')
     debugLog("DB: Creating/getting user for email: $email", "DB_USER");
     
     try {
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+        // First check if user exists
+        $stmt = $pdo->prepare("SELECT id, access_key FROM users WHERE email = ?");
         $stmt->execute([$email]);
         $existing_user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($existing_user) {
             debugLog("DB: User exists, updating - ID: " . $existing_user['id'], "DB_USER");
-            $stmt = $pdo->prepare("UPDATE users SET name = ?, phone = ?, company = ?, updated_at = NOW() WHERE email = ?");
-            $stmt->execute([$naam, $telefoon, $organisatie, $email]);
+            
+            // Ensure access_key exists
+            if (empty($existing_user['access_key'])) {
+                $access_key = generateSecureAccessKey();
+                $stmt = $pdo->prepare("UPDATE users SET access_key = ? WHERE id = ?");
+                $stmt->execute([$access_key, $existing_user['id']]);
+                debugLog("DB: Generated missing access_key for existing user", "DB_USER");
+            }
+            
+            // Try to update with both possible column name variations
+            try {
+                $stmt = $pdo->prepare("UPDATE users SET name = ?, phone = ?, company = ?, updated_at = NOW() WHERE email = ?");
+                $stmt->execute([$naam, $telefoon, $organisatie, $email]);
+            } catch (PDOException $e) {
+                debugLog("DB: Failed with phone/company, trying telefoon/organisatie", "DB_USER");
+                try {
+                    $stmt = $pdo->prepare("UPDATE users SET name = ?, telefoon = ?, organisatie = ?, updated_at = NOW() WHERE email = ?");
+                    $stmt->execute([$naam, $telefoon, $organisatie, $email]);
+                } catch (PDOException $e2) {
+                    debugLog("DB: Both update attempts failed, continuing with basic user", "DB_USER");
+                }
+            }
+            
             return $existing_user['id'];
+            
         } else {
             debugLog("DB: Creating new user", "DB_USER");
-            $stmt = $pdo->prepare("INSERT INTO users (name, email, phone, company, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())");
-            $stmt->execute([$naam, $email, $telefoon, $organisatie]);
+            
+            // Generate unique access key
+            $access_key = generateSecureAccessKey();
+            debugLog("DB: Generated access_key: $access_key", "DB_USER");
+            
+            // Try to create user with different column variations
+            try {
+                // First try with phone/company columns
+                $stmt = $pdo->prepare("INSERT INTO users (name, email, access_key, phone, company, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())");
+                $stmt->execute([$naam, $email, $access_key, $telefoon, $organisatie]);
+            } catch (PDOException $e) {
+                debugLog("DB: Failed with phone/company, trying telefoon/organisatie", "DB_USER");
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO users (name, email, access_key, telefoon, organisatie, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())");
+                    $stmt->execute([$naam, $email, $access_key, $telefoon, $organisatie]);
+                } catch (PDOException $e2) {
+                    debugLog("DB: Both insert attempts failed, trying minimal", "DB_USER");
+                    // Ultra-minimal insert
+                    $stmt = $pdo->prepare("INSERT INTO users (name, email, access_key, created_at) VALUES (?, ?, ?, NOW())");
+                    $stmt->execute([$naam, $email, $access_key]);
+                }
+            }
+            
             $user_id = $pdo->lastInsertId();
-            debugLog("DB: New user created - ID: $user_id", "DB_USER");
+            debugLog("DB: New user created - ID: $user_id with access_key: $access_key", "DB_USER");
             return $user_id;
         }
-    } catch (Exception $e) {
+        
+    } catch (PDOException $e) {
         debugLog("DB ERROR: User creation failed - " . $e->getMessage(), "DB_ERROR");
         return false;
+    }
+}
+
+/**
+ * Generate secure access key if function doesn't exist yet
+ */
+if (!function_exists('generateSecureAccessKey')) {
+    function generateSecureAccessKey() {
+        return bin2hex(random_bytes(16)); // 32 character hex string
     }
 }
 
