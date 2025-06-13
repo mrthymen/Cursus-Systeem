@@ -403,9 +403,65 @@ $stats = [
             <span style="color: var(--success); font-size: var(--font-size-sm); font-weight: 600;">
                 <i class="fas fa-circle" style="font-size: 8px;"></i> System Online
             </span>
+            <button onclick="showSystemInfo()" class="btn btn-secondary btn-sm">
+                <i class="fas fa-info-circle"></i> System Info
+            </button>
             <a href="?logout=1" class="btn btn-secondary btn-sm">
                 <i class="fas fa-sign-out-alt"></i> Uitloggen
             </a>
+        </div>
+    </div>
+    <div class="course-essentials">
+        <div class="essential-item">
+            <div class="essential-label"><i class="fas fa-users"></i> Gebruikers</div>
+            <div class="essential-value"><?= number_format($stats['total_users']) ?></div>
+            <div style="font-size: var(--font-size-xs); color: var(--neutral); margin-top: var(--space-1);">
+                <?= $stats['active_users'] ?> actief | +<?= $stats['new_users_week'] ?> deze week
+            </div>
+        </div>
+        <div class="essential-item">
+            <div class="essential-label"><i class="fas fa-book"></i> Cursussen</div>
+            <div class="essential-value"><?= number_format($stats['total_courses']) ?></div>
+            <div style="font-size: var(--font-size-xs); color: var(--neutral); margin-top: var(--space-1);">
+                <?= $stats['upcoming_courses'] ?> aankomend
+            </div>
+        </div>
+        <div class="essential-item">
+            <div class="essential-label"><i class="fas fa-euro-sign"></i> Omzet</div>
+            <div class="essential-value">€<?= number_format($stats['total_revenue']) ?></div>
+            <div style="font-size: var(--font-size-xs); color: var(--neutral); margin-top: var(--space-1);">
+                <?= $stats['pending_payments'] ?> openstaand
+            </div>
+        </div>
+        <div class="essential-item">
+            <div class="essential-label"><i class="fas fa-clipboard-list"></i> Planning</div>
+            <div class="essential-value"><?= number_format($stats['pending_interest']) ?></div>
+            <div style="font-size: var(--font-size-xs); color: var(--neutral); margin-top: var(--space-1);">
+                <?= $stats['converted_interest'] ?> geconverteerd
+                <?php if ($stats['high_priority_interest'] > 0): ?>
+                    | <span style="color: var(--error); font-weight: 600;"><?= $stats['high_priority_interest'] ?> urgent</span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <div class="essential-item">
+            <div class="essential-label"><i class="fas fa-certificate"></i> Certificaten</div>
+            <div class="essential-value"><?= number_format($stats['total_certificates']) ?></div>
+            <div style="font-size: var(--font-size-xs); color: var(--neutral); margin-top: var(--space-1);">
+                <?= $stats['ready_certificates'] ?> klaar om te genereren
+            </div>
+        </div>
+        <div class="essential-item">
+            <div class="essential-label"><i class="fas fa-cog"></i> Systeem</div>
+            <div class="essential-value" style="color: var(--success);">
+                <i class="fas fa-check-circle"></i> Online
+            </div>
+            <div style="font-size: var(--font-size-xs); color: var(--neutral); margin-top: var(--space-1);">
+                <?php if ($stats['emails_pending'] > 0): ?>
+                    <?= $stats['emails_pending'] ?> emails wachten
+                <?php else: ?>
+                    Alle systemen operationeel
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 </div>
@@ -428,130 +484,6 @@ $stats = [
     </div>
 </div>
 <?php endif; ?>
-
-<!-- Enhanced Stats Overview -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--space-6); margin-bottom: var(--space-6);">
-    <div class="card" style="border-left: 4px solid var(--primary);">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-4);">
-            <div>
-                <div style="color: var(--text-secondary); font-size: var(--font-size-xs); text-transform: uppercase; font-weight: 600; margin-bottom: var(--space-2);">
-                    <i class="fas fa-users"></i> Gebruikers
-                </div>
-                <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--text-primary); margin-bottom: var(--space-1);">
-                    <?= number_format($stats['total_users']) ?>
-                </div>
-                <div style="font-size: var(--font-size-xs); color: var(--neutral);">
-                    <i class="fas fa-chart-up"></i> <?= $stats['active_users'] ?> actief | +<?= $stats['new_users_week'] ?> deze week
-                </div>
-            </div>
-            <a href="users.php" style="color: var(--primary); text-decoration: none; font-size: var(--font-size-xs); font-weight: 600;">
-                <i class="fas fa-arrow-right"></i> Beheer
-            </a>
-        </div>
-    </div>
-    
-    <div class="card" style="border-left: 4px solid var(--neutral);">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-4);">
-            <div>
-                <div style="color: var(--text-secondary); font-size: var(--font-size-xs); text-transform: uppercase; font-weight: 600; margin-bottom: var(--space-2);">
-                    <i class="fas fa-book"></i> Cursussen
-                </div>
-                <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--text-primary); margin-bottom: var(--space-1);">
-                    <?= number_format($stats['total_courses']) ?>
-                </div>
-                <div style="font-size: var(--font-size-xs); color: var(--neutral);">
-                    <i class="fas fa-calendar"></i> <?= $stats['upcoming_courses'] ?> aankomend
-                </div>
-            </div>
-            <a href="courses.php" style="color: var(--neutral); text-decoration: none; font-size: var(--font-size-xs); font-weight: 600;">
-                <i class="fas fa-arrow-right"></i> Beheer
-            </a>
-        </div>
-    </div>
-    
-    <div class="card" style="border-left: 4px solid var(--warning);">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-4);">
-            <div>
-                <div style="color: var(--text-secondary); font-size: var(--font-size-xs); text-transform: uppercase; font-weight: 600; margin-bottom: var(--space-2);">
-                    <i class="fas fa-euro-sign"></i> Omzet
-                </div>
-                <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--text-primary); margin-bottom: var(--space-1);">
-                    €<?= number_format($stats['total_revenue']) ?>
-                </div>
-                <div style="font-size: var(--font-size-xs); color: var(--neutral);">
-                    <i class="fas fa-clock"></i> <?= $stats['pending_payments'] ?> openstaand
-                </div>
-            </div>
-            <a href="courses.php" style="color: var(--warning); text-decoration: none; font-size: var(--font-size-xs); font-weight: 600;">
-                <i class="fas fa-arrow-right"></i> Details
-            </a>
-        </div>
-    </div>
-    
-    <div class="card" style="border-left: 4px solid <?= $stats['high_priority_interest'] > 0 ? 'var(--error)' : 'var(--success)' ?>;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-4);">
-            <div>
-                <div style="color: var(--text-secondary); font-size: var(--font-size-xs); text-transform: uppercase; font-weight: 600; margin-bottom: var(--space-2);">
-                    <i class="fas fa-clipboard-list"></i> Planning
-                </div>
-                <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--text-primary); margin-bottom: var(--space-1);">
-                    <?= number_format($stats['pending_interest']) ?>
-                </div>
-                <div style="font-size: var(--font-size-xs); color: var(--neutral);">
-                    <i class="fas fa-check-circle"></i> <?= $stats['converted_interest'] ?> geconverteerd
-                    <?php if ($stats['high_priority_interest'] > 0): ?>
-                        | <span style="color: var(--error); font-weight: 600;"><?= $stats['high_priority_interest'] ?> urgent</span>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <a href="planning.php" style="color: <?= $stats['high_priority_interest'] > 0 ? 'var(--error)' : 'var(--success)' ?>; text-decoration: none; font-size: var(--font-size-xs); font-weight: 600;">
-                <i class="fas fa-arrow-right"></i> Planning
-            </a>
-        </div>
-    </div>
-    
-    <div class="card" style="border-left: 4px solid var(--success);">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-4);">
-            <div>
-                <div style="color: var(--text-secondary); font-size: var(--font-size-xs); text-transform: uppercase; font-weight: 600; margin-bottom: var(--space-2);">
-                    <i class="fas fa-certificate"></i> Certificaten
-                </div>
-                <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--text-primary); margin-bottom: var(--space-1);">
-                    <?= number_format($stats['total_certificates']) ?>
-                </div>
-                <div style="font-size: var(--font-size-xs); color: var(--neutral);">
-                    <i class="fas fa-bolt"></i> <?= $stats['ready_certificates'] ?> klaar om te genereren
-                </div>
-            </div>
-            <a href="certificates.php" style="color: var(--success); text-decoration: none; font-size: var(--font-size-xs); font-weight: 600;">
-                <i class="fas fa-arrow-right"></i> Genereer
-            </a>
-        </div>
-    </div>
-    
-    <div class="card" style="border-left: 4px solid var(--neutral);">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-4);">
-            <div>
-                <div style="color: var(--text-secondary); font-size: var(--font-size-xs); text-transform: uppercase; font-weight: 600; margin-bottom: var(--space-2);">
-                    <i class="fas fa-cog"></i> Systeem
-                </div>
-                <div style="font-size: var(--font-size-lg); font-weight: 600; color: var(--success); margin-bottom: var(--space-1);">
-                    <i class="fas fa-check-circle"></i> Online
-                </div>
-                <div style="font-size: var(--font-size-xs); color: var(--neutral);">
-                    <?php if ($stats['emails_pending'] > 0): ?>
-                        <i class="fas fa-envelope"></i> <?= $stats['emails_pending'] ?> emails wachten
-                    <?php else: ?>
-                        <i class="fas fa-check"></i> Alle systemen operationeel
-                    <?php endif; ?>
-                </div>
-            </div>
-            <button onclick="showSystemInfo()" style="background: none; border: none; color: var(--neutral); text-decoration: none; font-size: var(--font-size-xs); font-weight: 600; cursor: pointer;">
-                <i class="fas fa-info-circle"></i> Info
-            </button>
-        </div>
-    </div>
-</div>
 
 <!-- Quick Actions -->
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-6); margin-bottom: var(--space-6);">
