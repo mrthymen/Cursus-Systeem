@@ -587,8 +587,25 @@ try {
     debugLog("MAIN: Interest created - ID: $result", "MAIN_INTEREST");
     
     // Determine email type
-    $email_type = ($data['training_type'] === 'incompany') ? 'incompany' : 'interest';
-    debugLog("MAIN: Email type determined: $email_type", "MAIN_EMAIL");
+// ===== IMPROVED EMAIL TYPE DETECTION =====
+    
+    // Determine email type based on actual registration action
+    debugLog("MAIN: Determining email type - selected_course_id: " . ($data['selected_course_id'] ?? 'none'), "MAIN_EMAIL_TYPE");
+    
+    if ($data['training_type'] === 'incompany') {
+        $email_type = 'incompany';
+        debugLog("MAIN: Email type set to incompany", "MAIN_EMAIL_TYPE");
+    } elseif (!empty($data['selected_course_id']) && $data['selected_course_id'] !== 'other') {
+        // User selected a specific course = direct enrollment
+        $email_type = 'enrollment';
+        debugLog("MAIN: Email type set to enrollment (direct course selection)", "MAIN_EMAIL_TYPE");
+    } else {
+        // No specific course selected = interest registration
+        $email_type = 'interest';
+        debugLog("MAIN: Email type set to interest (no specific course)", "MAIN_EMAIL_TYPE");
+    }
+    
+    debugLog("MAIN: Final email type determined: $email_type", "MAIN_EMAIL")
     
     // Send confirmation email
     debugLog("MAIN: Calling sendConfirmationEmail...", "MAIN_EMAIL");
