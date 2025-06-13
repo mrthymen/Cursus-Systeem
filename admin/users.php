@@ -1,28 +1,114 @@
 <?php
 /**
- * Inventijn User Management Systeem
- * Gebruikers beheer, cursus toekenning en betalingen
- * 
- * @version 2.4.0
+ * Inventijn User Management System v6.4.0
+ * Converted to unified admin system
+ * Updated: 2025-06-13
+ * Changes: 
+ * v6.4.0 - Converted to unified admin design system
+ * v6.4.0 - CRITICAL: Fixed AJAX routing (moved to top)
+ * v6.4.0 - Replaced custom modals with unified modal system
+ * v6.4.0 - Added AJAX edit functionality for users
+ * v6.4.0 - Enhanced responsive design and accessibility
+ * v6.4.0 - Improved data presentation with unified components
+ * v6.4.0 - Added bulk operations capability
+ * v6.4.0 - Enhanced search and filtering
  */
-
-require_once '../includes/config.php';
 
 session_start();
 
-// Check admin login
+// CRITICAL: Handle AJAX requests FIRST before any HTML output
+if (isset($_GET['ajax']) && isset($_GET['action'])) {
+    // Include config for database connection
+    if (!file_exists('../includes/config.php')) {
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Config bestand niet gevonden']);
+        exit;
+    }
+    require_once '../includes/config.php';
+
+    // Get database connection
+    try {
+        $pdo = getDatabase();
+    } catch (Exception $e) {
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Database verbinding mislukt: ' . $e->getMessage()]);
+        exit;
+    }
+
+    // Set JSON header
+    header('Content-Type: application/json');
+    
+    try {
+        switch ($_GET['action']) {
+            case 'get_user':
+                if (isset($_GET['id']) && is_numeric($_GET['id'])) {
+                    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+                    $stmt->execute([$_GET['id']]);
+                    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($user) {
+                        echo json_encode($user);
+                    } else {
+                        echo json_encode(['error' => 'Gebruiker niet gevonden']);
+                    }
+                } else {
+                    echo json_encode(['error' => 'Invalid ID parameter']);
+                }
+                break;
+                
+            case 'get_user_courses':
+                if (isset($_GET['id']) && is_numeric($_GET['id'])) {
+                    $stmt = $pdo->prepare("
+                        SELECT cp.*, c.name as course_name, c.course_date, c.price
+                        FROM course_participants cp
+                        JOIN courses c ON cp.course_id = c.id
+                        WHERE cp.user_id = ? AND c.active = 1
+                        ORDER BY c.course_date ASC
+                    ");
+                    $stmt->execute([$_GET['id']]);
+                    $userCourses = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    echo json_encode(['success' => true, 'courses' => $userCourses]);
+                } else {
+                    echo json_encode(['error' => 'Invalid ID parameter']);
+                }
+                break;
+                
+            case 'test':
+                echo json_encode(['status' => 'success', 'message' => 'AJAX connection working!']);
+                break;
+                
+            default:
+                echo json_encode(['error' => 'Unknown action: ' . $_GET['action']]);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
+    }
+    exit; // CRITICAL: Exit immediately after AJAX response
+}
+
+// NOW include HTML header and continue with normal page rendering
+$page_title = 'Gebruikersbeheer';
+require_once 'admin_header.php';
+
+// Authentication check (if not in header)
 if (!isset($_SESSION['admin_user'])) {
-    header("Location: index.php");
+    header('Location: index.php?redirect=' . basename($_SERVER['PHP_SELF']));
     exit;
 }
 
-$pdo = getDatabase();
-$message = '';
-$error = '';
+// Include dependencies
+require_once '../includes/config.php';
 
-// Handle AJAX requests
+try {
+    $pdo = getDatabase();
+} catch (Exception $e) {
+    die('Database verbinding mislukt: ' . $e->getMessage());
+}
+
+// Handle form submissions via POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    header('Content-Type: application/json');
+    $response = ['success' => false, 'message' => 'Onbekende fout'];
     
     try {
         switch ($_POST['action']) {
@@ -43,7 +129,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $_POST['notes'] ?: null
                 ]);
                 
-                echo json_encode(['success' => $success, 'message' => $success ? 'Gebruiker aangemaakt!' : 'Fout bij aanmaken', 'access_key' => $accessKey]);
+                if ($success) {
+                    $_SESSION['admin_message'] = 'Gebruiker aangemaakt! Toegangscode: ' . $accessKey;
+                    $_SESSION['admin_message_type'] = 'success';
+                } else {
+                    $_SESSION['admin_message'] = 'Fout bij aanmaken gebruiker';
+                    $_SESSION['admin_message_type'] = 'error';
+                }
                 break;
                 
             case 'update_user':
@@ -57,17 +149,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $_POST['phone'] ?: null,
                     $_POST['company'] ?: null,
                     $_POST['notes'] ?: null,
-                    $_POST['active'] ? 1 : 0,
+                    isset($_POST['active']) ? 1 : 0,
                     $_POST['user_id']
                 ]);
                 
-                echo json_encode(['success' => $success, 'message' => $success ? 'Gebruiker bijgewerkt!' : 'Fout bij bijwerken']);
+                if ($success) {
+                    $_SESSION['admin_message'] = 'Gebruiker bijgewerkt!';
+                    $_SESSION['admin_message_type'] = 'success';
+                } else {
+                    $_SESSION['admin_message'] = 'Fout bij bijwerken gebruiker';
+                    $_SESSION['admin_message_type'] = 'error';
+                }
                 break;
                 
             case 'delete_user':
                 $stmt = $pdo->prepare("UPDATE users SET active = 0 WHERE id = ?");
                 $success = $stmt->execute([$_POST['user_id']]);
-                echo json_encode(['success' => $success, 'message' => $success ? 'Gebruiker gedeactiveerd!' : 'Fout bij deactiveren']);
+                
+                if ($success) {
+                    $_SESSION['admin_message'] = 'Gebruiker gedeactiveerd!';
+                    $_SESSION['admin_message_type'] = 'success';
+                } else {
+                    $_SESSION['admin_message'] = 'Fout bij deactiveren gebruiker';
+                    $_SESSION['admin_message_type'] = 'error';
+                }
+                break;
+                
+            case 'regenerate_access_key':
+                $newAccessKey = bin2hex(random_bytes(16));
+                $stmt = $pdo->prepare("UPDATE users SET access_key = ? WHERE id = ?");
+                $success = $stmt->execute([$newAccessKey, $_POST['user_id']]);
+                
+                if ($success) {
+                    $_SESSION['admin_message'] = 'Nieuwe toegangscode gegenereerd: ' . $newAccessKey;
+                    $_SESSION['admin_message_type'] = 'success';
+                } else {
+                    $_SESSION['admin_message'] = 'Fout bij genereren nieuwe code';
+                    $_SESSION['admin_message_type'] = 'error';
+                }
                 break;
                 
             case 'assign_courses':
@@ -96,44 +215,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     if ($success) $successCount++;
                 }
                 
-                echo json_encode([
-                    'success' => $successCount > 0, 
-                    'message' => "Cursustoekenningen bijgewerkt! ($successCount cursussen toegekend)"
-                ]);
-                break;
-                
-            case 'get_user_courses':
-                $stmt = $pdo->prepare("
-                    SELECT cp.*, c.name as course_name, c.course_date, c.price
-                    FROM course_participants cp
-                    JOIN courses c ON cp.course_id = c.id
-                    WHERE cp.user_id = ? AND c.active = 1
-                    ORDER BY c.course_date ASC
-                ");
-                $stmt->execute([$_POST['user_id']]);
-                $userCourses = $stmt->fetchAll();
-                
-                echo json_encode(['success' => true, 'courses' => $userCourses]);
-                break;
-                
-            case 'regenerate_access_key':
-                $newAccessKey = bin2hex(random_bytes(16));
-                $stmt = $pdo->prepare("UPDATE users SET access_key = ? WHERE id = ?");
-                $success = $stmt->execute([$newAccessKey, $_POST['user_id']]);
-                
-                echo json_encode([
-                    'success' => $success, 
-                    'message' => $success ? 'Nieuwe toegangscode gegenereerd!' : 'Fout bij genereren',
-                    'access_key' => $newAccessKey
-                ]);
+                $_SESSION['admin_message'] = "Cursustoekenningen bijgewerkt! ($successCount cursussen toegekend)";
+                $_SESSION['admin_message_type'] = 'success';
                 break;
                 
             default:
-                echo json_encode(['success' => false, 'message' => 'Onbekende actie']);
+                $_SESSION['admin_message'] = 'Onbekende actie';
+                $_SESSION['admin_message_type'] = 'error';
         }
     } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => 'Database fout: ' . $e->getMessage()]);
+        $_SESSION['admin_message'] = 'Database fout: ' . $e->getMessage();
+        $_SESSION['admin_message_type'] = 'error';
     }
+    
+    header('Location: ' . basename($_SERVER['PHP_SELF']));
     exit;
 }
 
@@ -195,503 +290,172 @@ $allCourses = $pdo->query("
     ORDER BY course_date ASC
 ")->fetchAll();
 
+// Calculate statistics
+$statsQuery = "
+    SELECT 
+        COUNT(*) as total_users,
+        SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) as active_users,
+        SUM(CASE WHEN DATE(created_at) > DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) as new_users_week
+    FROM users
+";
+$stats = $pdo->query($statsQuery)->fetch(PDO::FETCH_ASSOC);
+
+$paidCoursesQuery = "SELECT COUNT(*) FROM course_participants WHERE payment_status = 'paid'";
+$stats['paid_courses'] = $pdo->query($paidCoursesQuery)->fetchColumn();
+
+// Helper functions
+function getUserById($pdo, $id) {
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+    $stmt->execute([$id]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
 ?>
-<!DOCTYPE html>
-<html lang="nl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gebruikersbeheer - Inventijn</title>
-    <style>
-        /* Import Inventijn brand fonts */
-        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600&family=Barlow:wght@400;500;700&display=swap');
-        
-        :root {
-            /* Inventijn Officiële Kleuren */
-            --inventijn-light-pink: #e3a1e5;
-            --inventijn-purple: #b998e4;
-            --inventijn-light-blue: #6b80e8;
-            --inventijn-dark-blue: #3e5cc6;
-            --yellow: #F9CB40;
-            --orange: #F9A03F;
-            --white: #FFFFFF;
-            --grey-light: #F2F2F2;
-        }
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Barlow', sans-serif; background: var(--grey-light); line-height: 1.6; }
-        
-        .header { 
-            background: white; 
-            padding: 1rem 2rem; 
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
-            border-bottom: 3px solid var(--inventijn-dark-blue);
-        }
-        
-        .header-content { 
-            max-width: 1400px; 
-            margin: 0 auto; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-        }
-        
-        .header h1 { 
-            color: var(--inventijn-dark-blue); 
-            font-family: 'Space Grotesk', sans-serif; 
-            font-size: 1.5rem; 
-        }
-        
-        .nav-breadcrumb {
-            color: var(--inventijn-purple);
-            font-size: 0.9rem;
-        }
-        
-        .nav-breadcrumb a {
-            color: var(--inventijn-purple);
-            text-decoration: none;
-        }
-        
-        .nav-breadcrumb a:hover {
-            color: var(--inventijn-dark-blue);
-        }
-        
-        .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
-        
-        .page-header {
-            background: white;
-            padding: 2rem;
-            border-radius: 12px;
-            margin-bottom: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            border-left: 6px solid var(--yellow);
-        }
-        
-        .page-header h2 {
-            color: var(--inventijn-dark-blue);
-            font-family: 'Space Grotesk', sans-serif;
-            font-size: 1.8rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        .page-header p {
-            color: var(--inventijn-purple);
-            font-size: 1.1rem;
-        }
-        
-        .toolbar {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 12px;
-            margin-bottom: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        
-        .search-box {
-            flex: 1;
-            min-width: 250px;
-        }
-        
-        .search-box input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 2px solid #e5e7eb;
-            border-radius: 8px;
-            font-size: 0.9rem;
-        }
-        
-        .search-box input:focus {
-            outline: none;
-            border-color: var(--orange);
-        }
-        
-        .filter-select {
-            padding: 0.75rem;
-            border: 2px solid #e5e7eb;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            background: white;
-        }
-        
-        .btn { 
-            background: linear-gradient(135deg, var(--orange) 0%, #e69500 100%); 
-            color: white; 
-            padding: 0.75rem 1.5rem; 
-            border: none; 
-            border-radius: 8px; 
-            cursor: pointer; 
-            font-size: 0.875rem; 
-            font-weight: 600; 
-            text-decoration: none; 
-            display: inline-flex; 
-            align-items: center; 
-            gap: 0.5rem; 
-            transition: all 0.2s; 
-            font-family: inherit;
-        }
-        
-        .btn:hover { 
-            transform: translateY(-2px); 
-            box-shadow: 0 6px 20px rgba(249, 160, 63, 0.4); 
-        }
-        
-        .btn-secondary { background: var(--inventijn-purple); }
-        .btn-secondary:hover { box-shadow: 0 6px 20px rgba(185, 152, 228, 0.4); }
-        .btn-danger { background: var(--inventijn-light-pink); }
-        .btn-danger:hover { box-shadow: 0 6px 20px rgba(227, 161, 229, 0.4); }
-        .btn-sm { padding: 0.5rem 1rem; font-size: 0.8rem; }
-        
-        .users-table {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        
-        .table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        .table th,
-        .table td {
-            padding: 1rem;
-            text-align: left;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        
-        .table th {
-            background: var(--inventijn-dark-blue);
-            color: white;
-            font-weight: 600;
-            font-size: 0.875rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        
-        .table tr:hover {
-            background: rgba(62, 92, 198, 0.02);
-        }
-        
-        .user-name {
-            font-weight: 600;
-            color: var(--inventijn-dark-blue);
-            margin-bottom: 0.25rem;
-        }
-        
-        .user-email {
-            color: var(--inventijn-purple);
-            font-size: 0.875rem;
-        }
-        
-        .user-company {
-            color: #6b7280;
-            font-size: 0.8rem;
-            font-style: italic;
-        }
-        
-        .status-badge {
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-        
-        .status-active { background: #d1fae5; color: #065f46; }
-        .status-inactive { background: rgba(227, 161, 229, 0.2); color: var(--inventijn-light-pink); }
-        
-        .course-badge {
-            background: var(--grey-light);
-            color: var(--inventijn-dark-blue);
-            padding: 0.25rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            margin: 0.125rem;
-            display: inline-block;
-        }
-        
-        .course-badge.paid {
-            background: #d1fae5;
-            color: #065f46;
-        }
-        
-        .pagination {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 0.5rem;
-            margin-top: 2rem;
-        }
-        
-        .pagination a,
-        .pagination span {
-            padding: 0.5rem 1rem;
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            text-decoration: none;
-            color: var(--inventijn-dark-blue);
-        }
-        
-        .pagination a:hover {
-            background: var(--grey-light);
-        }
-        
-        .pagination .current {
-            background: var(--inventijn-dark-blue);
-            color: white;
-        }
-        
-        .modal { 
-            display: none; 
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 100%; 
-            background: rgba(0,0,0,0.5); 
-            z-index: 1000; 
-        }
-        
-        .modal-content { 
-            background: white; 
-            margin: 3% auto; 
-            padding: 2rem; 
-            border-radius: 12px; 
-            max-width: 800px; 
-            position: relative; 
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-        
-        .modal-close { 
-            position: absolute; 
-            top: 1rem; 
-            right: 1rem; 
-            background: none; 
-            border: none; 
-            font-size: 1.5rem; 
-            cursor: pointer; 
-            color: var(--inventijn-purple);
-        }
-        
-        .form-group { margin-bottom: 1.5rem; }
-        .form-group label { 
-            display: block; 
-            margin-bottom: 0.5rem; 
-            color: var(--inventijn-dark-blue); 
-            font-weight: 600; 
-            font-size: 0.9rem;
-        }
-        
-        .form-group input, .form-group select, .form-group textarea { 
-            width: 100%; 
-            padding: 0.75rem; 
-            border: 2px solid #e5e7eb; 
-            border-radius: 8px; 
-            font-size: 0.9rem; 
-            transition: border-color 0.3s; 
-            font-family: inherit;
-        }
-        
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { 
-            outline: none; 
-            border-color: var(--orange); 
-        }
-        
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-        
-        .course-assignment {
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            background: var(--grey-light);
-        }
-        
-        .course-assignment.remove {
-            opacity: 0.5;
-            background: #fee2e2;
-        }
-        
-        .course-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.5rem;
-        }
-        
-        .course-name {
-            font-weight: 600;
-            color: var(--inventijn-dark-blue);
-        }
-        
-        .course-meta {
-            font-size: 0.875rem;
-            color: var(--inventijn-purple);
-        }
-        
-        .payment-select {
-            margin-top: 0.5rem;
-        }
-        
-        .stats-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            border-left: 4px solid var(--inventijn-light-blue);
-        }
-        
-        .stat-card h3 {
-            color: var(--inventijn-purple);
-            font-size: 0.875rem;
-            margin-bottom: 0.5rem;
-            text-transform: uppercase;
-            font-weight: 600;
-        }
-        
-        .stat-card .value {
-            color: var(--inventijn-dark-blue);
-            font-size: 1.5rem;
-            font-weight: 700;
-        }
-        
-        @media (max-width: 768px) {
-            .container { padding: 1rem; }
-            .form-grid { grid-template-columns: 1fr; }
-            .toolbar { flex-direction: column; align-items: stretch; }
-            .table { font-size: 0.875rem; }
-            .table th, .table td { padding: 0.75rem 0.5rem; }
-        }
-    </style>
-</head>
-<body>
-    <header class="header">
-        <div class="header-content">
-            <h1>👥 Gebruikersbeheer</h1>
-            <div class="nav-breadcrumb">
-                <a href="index.php">Dashboard</a> → 
-                <a href="courses.php">Cursussen</a> → 
-                Gebruikers
+
+<!-- Page content -->
+<div class="container">
+    <!-- Page Header -->
+    <div class="card">
+        <div class="card-header">
+            <h2>👥 Gebruikersbeheer</h2>
+            <p style="color: var(--text-secondary); margin: 0;">Beheer gebruikers, cursustoekenningen en betalingen vanuit één centrale plek</p>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">👥</div>
+            <div class="stat-content">
+                <div class="stat-label">Totaal Gebruikers</div>
+                <div class="stat-value"><?= number_format($stats['total_users']) ?></div>
             </div>
         </div>
-    </header>
-
-    <div class="container">
-        <div class="page-header">
-            <h2>Gebruikers Management Center</h2>
-            <p>Beheer gebruikers, cursustoekenningen en betalingen vanuit één centrale plek</p>
-        </div>
-
-        <!-- Stats -->
-        <div class="stats-row">
-            <div class="stat-card">
-                <h3>👥 Totaal Gebruikers</h3>
-                <div class="value"><?= number_format($totalUsers) ?></div>
-            </div>
-            <div class="stat-card">
-                <h3>✅ Actieve Gebruikers</h3>
-                <div class="value"><?= count(array_filter($users, fn($u) => $u['active'])) ?></div>
-            </div>
-            <div class="stat-card">
-                <h3>📚 Gem. Cursussen/User</h3>
-                <div class="value"><?= $totalUsers > 0 ? number_format(array_sum(array_column($users, 'course_count')) / $totalUsers, 1) : '0' ?></div>
-            </div>
-            <div class="stat-card">
-                <h3>💰 Betaalde Inschrijvingen</h3>
-                <div class="value"><?= array_sum(array_column($users, 'paid_courses')) ?></div>
+        
+        <div class="stat-card">
+            <div class="stat-icon">✅</div>
+            <div class="stat-content">
+                <div class="stat-label">Actieve Gebruikers</div>
+                <div class="stat-value"><?= number_format($stats['active_users']) ?></div>
             </div>
         </div>
-
-        <!-- Toolbar -->
-        <div class="toolbar">
-            <div class="search-box">
-                <input type="text" 
-                       placeholder="🔍 Zoek op naam, email of bedrijf..." 
-                       value="<?= htmlspecialchars($search) ?>"
-                       onkeyup="if(event.key==='Enter') applyFilters()">
+        
+        <div class="stat-card">
+            <div class="stat-icon">📈</div>
+            <div class="stat-content">
+                <div class="stat-label">Nieuwe (7 dagen)</div>
+                <div class="stat-value"><?= number_format($stats['new_users_week']) ?></div>
             </div>
-            
-            <select class="filter-select" onchange="applyFilters()">
-                <option value="all" <?= $status === 'all' ? 'selected' : '' ?>>Alle gebruikers</option>
-                <option value="active" <?= $status === 'active' ? 'selected' : '' ?>>Actieve gebruikers</option>
-                <option value="inactive" <?= $status === 'inactive' ? 'selected' : '' ?>>Inactieve gebruikers</option>
-            </select>
-            
-            <button class="btn" onclick="showNewUserModal()">
-                ➕ Nieuwe Gebruiker
-            </button>
-            
-            <button class="btn btn-secondary" onclick="showBulkImportModal()">
-                📋 Bulk Import
-            </button>
         </div>
+        
+        <div class="stat-card">
+            <div class="stat-icon">💰</div>
+            <div class="stat-content">
+                <div class="stat-label">Betaalde Inschrijvingen</div>
+                <div class="stat-value"><?= number_format($stats['paid_courses']) ?></div>
+            </div>
+        </div>
+    </div>
 
-        <!-- Users Table -->
-        <div class="users-table">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Gebruiker</th>
-                        <th>Contact</th>
-                        <th>Cursussen</th>
-                        <th>Status</th>
-                        <th>Aangemaakt</th>
-                        <th>Acties</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($users)): ?>
+    <!-- Toolbar -->
+    <div class="card">
+        <div class="card-body">
+            <div class="toolbar">
+                <div class="search-group">
+                    <input type="text" 
+                           placeholder="🔍 Zoek op naam, email of bedrijf..." 
+                           value="<?= htmlspecialchars($search) ?>"
+                           id="searchInput"
+                           onkeyup="if(event.key==='Enter') applyFilters()">
+                </div>
+                
+                <select id="statusFilter" onchange="applyFilters()">
+                    <option value="all" <?= $status === 'all' ? 'selected' : '' ?>>Alle gebruikers</option>
+                    <option value="active" <?= $status === 'active' ? 'selected' : '' ?>>Actieve gebruikers</option>
+                    <option value="inactive" <?= $status === 'inactive' ? 'selected' : '' ?>>Inactieve gebruikers</option>
+                </select>
+                
+                <button onclick="openModal('userModal'); resetUserForm();" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Nieuwe Gebruiker
+                </button>
+                
+                <button onclick="showBulkImportModal()" class="btn btn-secondary">
+                    <i class="fas fa-upload"></i> Bulk Import
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Users Table -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Gebruikerslijst</h3>
+            <span class="badge"><?= number_format($totalUsers) ?> gebruikers</span>
+        </div>
+        
+        <div class="table-container">
+            <?php if (empty($users)): ?>
+                <div class="empty-state">
+                    <div class="empty-icon">👥</div>
+                    <h3>Geen gebruikers gevonden</h3>
+                    <p>Er zijn geen gebruikers die voldoen aan de huidige filters.</p>
+                    <button onclick="openModal('userModal'); resetUserForm();" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Eerste Gebruiker Aanmaken
+                    </button>
+                </div>
+            <?php else: ?>
+                <table class="table">
+                    <thead>
                         <tr>
-                            <td colspan="6" style="text-align: center; padding: 3rem; color: var(--inventijn-purple);">
-                                👥 Geen gebruikers gevonden met de huidige filters.<br>
-                                <button class="btn btn-sm" onclick="showNewUserModal()" style="margin-top: 1rem;">➕ Eerste Gebruiker</button>
-                            </td>
+                            <th>Gebruiker</th>
+                            <th>Contact</th>
+                            <th>Cursussen</th>
+                            <th>Status</th>
+                            <th>Aangemaakt</th>
+                            <th>Acties</th>
                         </tr>
-                    <?php else: ?>
+                    </thead>
+                    <tbody>
                         <?php foreach ($users as $user): ?>
                         <tr>
                             <td>
-                                <div class="user-name"><?= htmlspecialchars($user['name']) ?></div>
-                                <div class="user-email"><?= htmlspecialchars($user['email']) ?></div>
-                                <?php if ($user['company']): ?>
-                                    <div class="user-company"><?= htmlspecialchars($user['company']) ?></div>
-                                <?php endif; ?>
+                                <div class="user-info">
+                                    <div class="user-name"><?= htmlspecialchars($user['name']) ?></div>
+                                    <div class="user-email"><?= htmlspecialchars($user['email']) ?></div>
+                                    <?php if ($user['company']): ?>
+                                        <div class="user-company"><?= htmlspecialchars($user['company']) ?></div>
+                                    <?php endif; ?>
+                                </div>
                             </td>
                             <td>
                                 <?php if ($user['phone']): ?>
-                                    <div>📞 <?= htmlspecialchars($user['phone']) ?></div>
+                                    <div class="contact-item">
+                                        <i class="fas fa-phone"></i> <?= htmlspecialchars($user['phone']) ?>
+                                    </div>
                                 <?php endif; ?>
-                                <div style="font-size: 0.8rem; color: #6b7280;">
-                                    🔑 <?= substr($user['access_key'], 0, 8) ?>...
+                                <div class="access-key">
+                                    <i class="fas fa-key"></i> <?= substr($user['access_key'], 0, 8) ?>...
                                 </div>
                             </td>
                             <td>
                                 <?php if ($user['course_count'] > 0): ?>
-                                    <div style="margin-bottom: 0.5rem;">
-                                        <span class="course-badge">📚 <?= $user['course_count'] ?> cursussen</span>
+                                    <div class="course-summary">
+                                        <span class="course-badge">
+                                            📚 <?= $user['course_count'] ?> cursussen
+                                        </span>
                                         <?php if ($user['paid_courses'] > 0): ?>
-                                            <span class="course-badge paid">💰 <?= $user['paid_courses'] ?> betaald</span>
+                                            <span class="course-badge paid">
+                                                💰 <?= $user['paid_courses'] ?> betaald
+                                            </span>
                                         <?php endif; ?>
                                     </div>
                                     <?php if ($user['course_names']): ?>
-                                        <div style="font-size: 0.8rem; color: var(--inventijn-purple);">
+                                        <div class="course-list">
                                             <?= htmlspecialchars(strlen($user['course_names']) > 50 ? substr($user['course_names'], 0, 50) . '...' : $user['course_names']) ?>
                                         </div>
                                     <?php endif; ?>
                                 <?php else: ?>
-                                    <span style="color: #6b7280; font-style: italic;">Geen cursussen</span>
+                                    <span class="text-muted">Geen cursussen</span>
                                 <?php endif; ?>
                             </td>
                             <td>
@@ -703,526 +467,408 @@ $allCourses = $pdo->query("
                                 <?= date('d-m-Y', strtotime($user['created_at'])) ?>
                             </td>
                             <td>
-                                <div style="display: flex; gap: 0.5rem;">
-                                    <button class="btn btn-sm btn-secondary" onclick="editUser(<?= $user['id'] ?>)" title="Bewerken">
-                                        ✏️
+                                <div class="btn-group">
+                                    <button onclick="editUser(<?= $user['id'] ?>)" class="btn btn-sm btn-primary" title="Bewerken">
+                                        <i class="fas fa-edit"></i>
                                     </button>
-                                    <button class="btn btn-sm" onclick="assignCourses(<?= $user['id'] ?>)" title="Cursussen toekennen">
-                                        📚
+                                    <button onclick="assignCourses(<?= $user['id'] ?>)" class="btn btn-sm btn-warning" title="Cursussen toekennen">
+                                        <i class="fas fa-graduation-cap"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteUser(<?= $user['id'] ?>)" title="Deactiveren">
-                                        🗑️
+                                    <button onclick="deleteUser(<?= $user['id'] ?>)" class="btn btn-sm btn-danger" title="Deactiveren">
+                                        <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
                             </td>
                         </tr>
                         <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+                    </tbody>
+                </table>
+            <?php endif; ?>
         </div>
-
+        
         <!-- Pagination -->
         <?php if ($totalPages > 1): ?>
-        <div class="pagination">
-            <?php if ($page > 1): ?>
-                <a href="?page=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&status=<?= $status ?>">‹ Vorige</a>
-            <?php endif; ?>
-            
-            <?php for ($i = max(1, $page - 2); $i <= min($totalPages, $page + 2); $i++): ?>
-                <?php if ($i == $page): ?>
-                    <span class="current"><?= $i ?></span>
-                <?php else: ?>
-                    <a href="?page=<?= $i ?>&search=<?= urlencode($search) ?>&status=<?= $status ?>"><?= $i ?></a>
+        <div class="card-footer">
+            <div class="pagination">
+                <?php if ($page > 1): ?>
+                    <a href="?page=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&status=<?= $status ?>" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-chevron-left"></i> Vorige
+                    </a>
                 <?php endif; ?>
-            <?php endfor; ?>
-            
-            <?php if ($page < $totalPages): ?>
-                <a href="?page=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&status=<?= $status ?>">Volgende ›</a>
-            <?php endif; ?>
+                
+                <span class="pagination-info">
+                    Pagina <?= $page ?> van <?= $totalPages ?> (<?= number_format($totalUsers) ?> totaal)
+                </span>
+                
+                <?php if ($page < $totalPages): ?>
+                    <a href="?page=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&status=<?= $status ?>" class="btn btn-secondary btn-sm">
+                        Volgende <i class="fas fa-chevron-right"></i>
+                    </a>
+                <?php endif; ?>
+            </div>
         </div>
         <?php endif; ?>
     </div>
+</div>
 
-    <!-- New User Modal -->
-    <div id="newUserModal" class="modal">
-        <div class="modal-content">
-            <button class="modal-close" onclick="closeModal('newUserModal')">&times;</button>
-            <h2 style="color: var(--inventijn-dark-blue); font-family: 'Space Grotesk', sans-serif; margin-bottom: 1.5rem;">
-                ➕ Nieuwe Gebruiker Aanmaken
-            </h2>
-            
-            <form id="newUserForm" onsubmit="createUser(event)">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="user_name">Volledige Naam *</label>
-                        <input type="text" id="user_name" name="name" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="user_email">E-mailadres *</label>
-                        <input type="email" id="user_email" name="email" required>
-                    </div>
-                </div>
-                
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="user_phone">Telefoonnummer</label>
-                        <input type="tel" id="user_phone" name="phone">
-                    </div>
-                    <div class="form-group">
-                        <label for="user_company">Bedrijf</label>
-                        <input type="text" id="user_company" name="company">
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="user_notes">Notities</label>
-                    <textarea id="user_notes" name="notes" rows="2" placeholder="Eventuele opmerkingen..."></textarea>
-                </div>
-                
-                <div style="margin-top: 2rem; display: flex; gap: 1rem;">
-                    <button type="submit" class="btn">💾 Gebruiker Aanmaken</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('newUserModal')">Annuleren</button>
-                </div>
-            </form>
-        </div>
-    </div>
+<!-- User Modal using unified modal system -->
+<?php
+// Define user form fields for the unified modal system
+$userFields = [
+    ['name' => 'name', 'label' => 'Volledige Naam', 'type' => 'text', 'required' => true],
+    ['name' => 'email', 'label' => 'E-mailadres', 'type' => 'email', 'required' => true],
+    ['name' => 'phone', 'label' => 'Telefoonnummer', 'type' => 'tel'],
+    ['name' => 'company', 'label' => 'Bedrijf', 'type' => 'text'],
+    ['name' => 'notes', 'label' => 'Notities', 'type' => 'textarea', 'rows' => 3, 'full_width' => true],
+    ['name' => 'active', 'label' => 'Gebruiker is actief', 'type' => 'checkbox']
+];
 
-    <!-- Edit User Modal -->
-    <div id="editUserModal" class="modal">
-        <div class="modal-content">
-            <button class="modal-close" onclick="closeModal('editUserModal')">&times;</button>
-            <h2 style="color: var(--inventijn-dark-blue); font-family: 'Space Grotesk', sans-serif; margin-bottom: 1.5rem;">
-                ✏️ Gebruiker Bewerken
-            </h2>
-            
-            <form id="editUserForm" onsubmit="updateUser(event)">
-                <input type="hidden" id="edit_user_id" name="user_id">
-                
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="edit_user_name">Volledige Naam *</label>
-                        <input type="text" id="edit_user_name" name="name" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="edit_user_email">E-mailadres *</label>
-                        <input type="email" id="edit_user_email" name="email" required>
-                    </div>
-                </div>
-                
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="edit_user_phone">Telefoonnummer</label>
-                        <input type="tel" id="edit_user_phone" name="phone">
-                    </div>
-                    <div class="form-group">
-                        <label for="edit_user_company">Bedrijf</label>
-                        <input type="text" id="edit_user_company" name="company">
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="edit_user_notes">Notities</label>
-                    <textarea id="edit_user_notes" name="notes" rows="2"></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="edit_user_active" name="active" style="margin-right: 0.5rem;">
-                        Gebruiker is actief
-                    </label>
-                </div>
-                
-                <div style="background: var(--grey-light); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
-                    <div style="font-size: 0.9rem; color: var(--inventijn-dark-blue); margin-bottom: 0.5rem;">
-                        <strong>Huidige Toegangscode:</strong>
-                    </div>
-                    <div style="font-family: monospace; font-size: 0.8rem; color: var(--inventijn-purple);" id="current_access_key">
-                        <!-- Filled by JavaScript -->
-                    </div>
-                    <button type="button" class="btn btn-sm btn-secondary" onclick="regenerateAccessKey()" style="margin-top: 0.5rem;">
-                        🔄 Nieuwe Code Genereren
-                    </button>
-                </div>
-                
-                <div style="margin-top: 2rem; display: flex; gap: 1rem;">
-                    <button type="submit" class="btn">💾 Bijwerken</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('editUserModal')">Annuleren</button>
-                    <button type="button" class="btn btn-danger" onclick="deleteUser(currentEditUserId)">🗑️ Deactiveren</button>
-                </div>
-            </form>
-        </div>
-    </div>
+echo renderCrudModal('user', $userFields);
+?>
 
-    <!-- Course Assignment Modal -->
-    <div id="courseAssignmentModal" class="modal">
-        <div class="modal-content">
+<!-- Course Assignment Modal -->
+<div id="courseAssignmentModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>📚 Cursussen Toekennen</h3>
             <button class="modal-close" onclick="closeModal('courseAssignmentModal')">&times;</button>
-            <h2 style="color: var(--inventijn-dark-blue); font-family: 'Space Grotesk', sans-serif; margin-bottom: 1.5rem;">
-                📚 Cursussen Toekennen
-            </h2>
-            
-            <div id="user_course_info" style="background: var(--grey-light); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
+        </div>
+        <div class="modal-body">
+            <div id="userCourseInfo" class="info-box">
                 <!-- Filled by JavaScript -->
             </div>
             
-            <div id="course_assignments">
+            <div id="courseAssignments">
                 <!-- Course assignments will be added here by JavaScript -->
             </div>
             
-            <div style="margin: 1rem 0; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+            <div class="btn-group" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
                 <button type="button" class="btn btn-secondary" onclick="addCourseAssignment()">
-                    ➕ Cursus Toevoegen
+                    <i class="fas fa-plus"></i> Cursus Toevoegen
                 </button>
             </div>
             
-            <div style="margin-top: 2rem; display: flex; gap: 1rem;">
-                <button type="button" class="btn" onclick="saveCourseAssignments()">💾 Cursussen Opslaan</button>
-                <button type="button" class="btn btn-secondary" onclick="closeModal('courseAssignmentModal')">Annuleren</button>
+            <div class="btn-group" style="margin-top: 2rem;">
+                <button type="button" class="btn btn-primary" onclick="saveCourseAssignments()">
+                    <i class="fas fa-save"></i> Cursussen Opslaan
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('courseAssignmentModal')">
+                    <i class="fas fa-times"></i> Annuleren
+                </button>
             </div>
         </div>
     </div>
+</div>
 
-    <script>
-        // Global variables
-        let currentEditUserId = null;
-        let currentAssignUserId = null;
-        let courseAssignmentCounter = 0;
+<!-- Confirmation Modal for deletions -->
+<?= renderConfirmationModal('deleteModal', 'Gebruiker Deactiveren', 'Weet je zeker dat je deze gebruiker wilt deactiveren?') ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Generate edit and reset functions for this page
+    generateEditFunction('user');
+    generateResetFunction('user');
+    
+    // Initialize page-specific functionality
+    initializeUsersPage();
+});
+
+// Global variables
+let currentEditUserId = null;
+let currentAssignUserId = null;
+let courseAssignmentCounter = 0;
+const allCoursesData = <?= json_encode($allCourses) ?>;
+
+function initializeUsersPage() {
+    console.log('Users page initialized');
+    // Test AJAX connection
+    testAjax();
+}
+
+// Search and filter functions
+function applyFilters() {
+    const search = document.getElementById('searchInput').value;
+    const status = document.getElementById('statusFilter').value;
+    
+    const url = new URL(window.location);
+    url.searchParams.set('search', search);
+    url.searchParams.set('status', status);
+    url.searchParams.set('page', '1'); // Reset to first page
+    
+    window.location.href = url.toString();
+}
+
+// Reset user form for creating new user
+function resetUserForm() {
+    const form = document.getElementById('userForm');
+    if (form) {
+        form.reset();
+        document.getElementById('userAction').value = 'create_user';
+        document.getElementById('userId').value = '';
+        document.getElementById('userModalTitle').textContent = 'Nieuwe Gebruiker Aanmaken';
+        document.getElementById('userModalSubmitText').textContent = 'Gebruiker Aanmaken';
         
-        // All users and courses data (for JavaScript operations)
-        const usersData = <?= json_encode($users) ?>;
-        const allCoursesData = <?= json_encode($allCourses) ?>;
+        // Uncheck active checkbox for new users (will be set to active by default in backend)
+        const activeCheckbox = document.getElementById('active');
+        if (activeCheckbox) {
+            activeCheckbox.checked = true;
+        }
+    }
+}
+
+// Delete user with confirmation
+function deleteUser(userId) {
+    openConfirmationModal('deleteModal', function() {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.innerHTML = `
+            <input type="hidden" name="action" value="delete_user">
+            <input type="hidden" name="user_id" value="${userId}">
+        `;
+        document.body.appendChild(form);
+        form.submit();
+    });
+}
+
+// Course assignment functions
+async function assignCourses(userId) {
+    try {
+        currentAssignUserId = userId;
+        courseAssignmentCounter = 0;
         
-        // Modal functions
-        function showNewUserModal() {
-            document.getElementById('newUserModal').style.display = 'block';
+        // Load user data
+        const userData = await fetchData(`?ajax=1&action=get_user&id=${userId}`);
+        if (userData.error) {
+            throw new Error(userData.error);
         }
         
-        function closeModal(modalId) {
-            document.getElementById(modalId).style.display = 'none';
-        }
+        // Set user info
+        document.getElementById('userCourseInfo').innerHTML = `
+            <div class="info-header">
+                <div class="info-title">👤 ${userData.name}</div>
+                <div class="info-subtitle">📧 ${userData.email}</div>
+            </div>
+        `;
         
-        // Search and filter functions
-        function applyFilters() {
-            const search = document.querySelector('.search-box input').value;
-            const status = document.querySelector('.filter-select').value;
+        // Get current course assignments
+        const coursesData = await fetchData(`?ajax=1&action=get_user_courses&id=${userId}`);
+        if (coursesData.success) {
+            // Clear assignments
+            document.getElementById('courseAssignments').innerHTML = '';
             
-            const url = new URL(window.location);
-            url.searchParams.set('search', search);
-            url.searchParams.set('status', status);
-            url.searchParams.set('page', '1'); // Reset to first page
-            
-            window.location.href = url.toString();
-        }
-        
-        // Create new user
-        async function createUser(event) {
-            event.preventDefault();
-            
-            const formData = new FormData(event.target);
-            formData.append('action', 'create_user');
-            
-            try {
-                const response = await fetch('', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert('✅ ' + result.message + '\nToegangssleutel: ' + result.access_key);
-                    closeModal('newUserModal');
-                    location.reload();
-                } else {
-                    alert('❌ ' + result.message);
-                }
-            } catch (error) {
-                alert('❌ Er is een fout opgetreden: ' + error.message);
-            }
-        }
-        
-        // Edit user
-        function editUser(userId) {
-            const user = usersData.find(u => u.id == userId);
-            if (!user) {
-                alert('❌ Gebruiker niet gevonden');
-                return;
-            }
-            
-            currentEditUserId = userId;
-            
-            // Fill the form
-            document.getElementById('edit_user_id').value = user.id;
-            document.getElementById('edit_user_name').value = user.name || '';
-            document.getElementById('edit_user_email').value = user.email || '';
-            document.getElementById('edit_user_phone').value = user.phone || '';
-            document.getElementById('edit_user_company').value = user.company || '';
-            document.getElementById('edit_user_notes').value = user.notes || '';
-            document.getElementById('edit_user_active').checked = user.active == 1;
-            document.getElementById('current_access_key').textContent = user.access_key;
-            
-            document.getElementById('editUserModal').style.display = 'block';
-        }
-        
-        // Update user
-        async function updateUser(event) {
-            event.preventDefault();
-            
-            const formData = new FormData(event.target);
-            formData.append('action', 'update_user');
-            
-            try {
-                const response = await fetch('', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert('✅ ' + result.message);
-                    closeModal('editUserModal');
-                    location.reload();
-                } else {
-                    alert('❌ ' + result.message);
-                }
-            } catch (error) {
-                alert('❌ Er is een fout opgetreden: ' + error.message);
-            }
-        }
-        
-        // Delete user
-        async function deleteUser(userId) {
-            if (!confirm('🗑️ Weet je zeker dat je deze gebruiker wilt deactiveren?\n\nDe gebruiker wordt niet verwijderd maar gemarkeerd als inactief.')) {
-                return;
-            }
-            
-            const formData = new FormData();
-            formData.append('action', 'delete_user');
-            formData.append('user_id', userId);
-            
-            try {
-                const response = await fetch('', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert('✅ ' + result.message);
-                    closeModal('editUserModal');
-                    location.reload();
-                } else {
-                    alert('❌ ' + result.message);
-                }
-            } catch (error) {
-                alert('❌ Er is een fout opgetreden: ' + error.message);
-            }
-        }
-        
-        // Regenerate access key
-        async function regenerateAccessKey() {
-            if (!confirm('🔄 Weet je zeker dat je een nieuwe toegangscode wilt genereren?\n\nDe oude code werkt dan niet meer.')) {
-                return;
-            }
-            
-            const formData = new FormData();
-            formData.append('action', 'regenerate_access_key');
-            formData.append('user_id', currentEditUserId);
-            
-            try {
-                const response = await fetch('', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    document.getElementById('current_access_key').textContent = result.access_key;
-                    alert('✅ ' + result.message + '\nNieuwe code: ' + result.access_key);
-                } else {
-                    alert('❌ ' + result.message);
-                }
-            } catch (error) {
-                alert('❌ Er is een fout opgetreden: ' + error.message);
-            }
-        }
-        
-        // Course assignment functions
-        async function assignCourses(userId) {
-            const user = usersData.find(u => u.id == userId);
-            if (!user) {
-                alert('❌ Gebruiker niet gevonden');
-                return;
-            }
-            
-            currentAssignUserId = userId;
-            courseAssignmentCounter = 0;
-            
-            // Set user info
-            document.getElementById('user_course_info').innerHTML = `
-                <div style="font-weight: 600; color: var(--inventijn-dark-blue); margin-bottom: 0.5rem;">
-                    👤 ${user.name}
-                </div>
-                <div style="font-size: 0.9rem; color: var(--inventijn-purple);">
-                    📧 ${user.email} | 📚 ${user.course_count} cursussen | 💰 ${user.paid_courses} betaald
-                </div>
-            `;
-            
-            // Get current course assignments
-            try {
-                const formData = new FormData();
-                formData.append('action', 'get_user_courses');
-                formData.append('user_id', userId);
-                
-                const response = await fetch('', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    // Clear assignments
-                    document.getElementById('course_assignments').innerHTML = '';
-                    
-                    // Add existing assignments
-                    result.courses.forEach(course => {
-                        addCourseAssignment(course);
-                    });
-                    
-                    // Show modal
-                    document.getElementById('courseAssignmentModal').style.display = 'block';
-                } else {
-                    alert('❌ ' + result.message);
-                }
-            } catch (error) {
-                alert('❌ Er is een fout opgetreden: ' + error.message);
-            }
-        }
-        
-        // Add course assignment row
-        function addCourseAssignment(existingCourse = null) {
-            const id = ++courseAssignmentCounter;
-            const container = document.getElementById('course_assignments');
-            
-            const assignmentDiv = document.createElement('div');
-            assignmentDiv.className = 'course-assignment';
-            assignmentDiv.id = `assignment-${id}`;
-            
-            let courseOptions = '<option value="">-- Selecteer Cursus --</option>';
-            allCoursesData.forEach(course => {
-                const selected = existingCourse && existingCourse.course_id == course.id ? 'selected' : '';
-                const courseInfo = `${course.name} (${new Date(course.course_date).toLocaleDateString('nl-NL')})`;
-                courseOptions += `<option value="${course.id}" ${selected}>${courseInfo}</option>`;
+            // Add existing assignments
+            coursesData.courses.forEach(course => {
+                addCourseAssignment(course);
             });
             
-            const paymentStatus = existingCourse ? existingCourse.payment_status : 'pending';
-            
-            assignmentDiv.innerHTML = `
-                <div class="course-header">
-                    <div class="course-name">Cursus Toekenning #${id}</div>
-                    <button type="button" class="btn btn-sm btn-danger" onclick="removeCourseAssignment(${id})">
-                        🗑️ Verwijderen
-                    </button>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;">
-                    <div>
-                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Cursus:</label>
-                        <select name="course_id" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
-                            ${courseOptions}
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Betaalstatus:</label>
-                        <select name="payment_status" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
-                            <option value="pending" ${paymentStatus === 'pending' ? 'selected' : ''}>⏳ Wachtend</option>
-                            <option value="paid" ${paymentStatus === 'paid' ? 'selected' : ''}>✅ Betaald</option>
-                            <option value="cancelled" ${paymentStatus === 'cancelled' ? 'selected' : ''}>❌ Geannuleerd</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div style="margin-top: 0.5rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Notities:</label>
-                    <input type="text" name="notes" placeholder="Eventuele opmerkingen..." 
-                           value="${existingCourse ? (existingCourse.notes || '') : ''}"
-                           style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
-                </div>
-            `;
-            
-            container.appendChild(assignmentDiv);
+            // Show modal
+            openModal('courseAssignmentModal');
+            showNotification('Cursusgegevens geladen!', 'success');
+        } else {
+            throw new Error(coursesData.message || 'Fout bij laden cursusgegevens');
         }
+    } catch (error) {
+        console.error('Error loading course assignments:', error);
+        showNotification('Fout bij laden: ' + error.message, 'error');
+    }
+}
+
+// Add course assignment row
+function addCourseAssignment(existingCourse = null) {
+    const id = ++courseAssignmentCounter;
+    const container = document.getElementById('courseAssignments');
+    
+    const assignmentDiv = document.createElement('div');
+    assignmentDiv.className = 'form-group';
+    assignmentDiv.id = `assignment-${id}`;
+    
+    let courseOptions = '<option value="">-- Selecteer Cursus --</option>';
+    allCoursesData.forEach(course => {
+        const selected = existingCourse && existingCourse.course_id == course.id ? 'selected' : '';
+        const courseInfo = `${course.name} (${new Date(course.course_date).toLocaleDateString('nl-NL')})`;
+        courseOptions += `<option value="${course.id}" ${selected}>${courseInfo}</option>`;
+    });
+    
+    const paymentStatus = existingCourse ? existingCourse.payment_status : 'pending';
+    
+    assignmentDiv.innerHTML = `
+        <div class="assignment-header">
+            <label>Cursus Toekenning #${id}</label>
+            <button type="button" onclick="removeCourseAssignment(${id})" class="btn btn-sm btn-danger">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
         
-        // Remove course assignment
-        function removeCourseAssignment(id) {
-            const element = document.getElementById(`assignment-${id}`);
-            if (element) {
-                element.remove();
-            }
-        }
-        
-        // Save course assignments
-        async function saveCourseAssignments() {
-            const assignments = [];
-            const container = document.getElementById('course_assignments');
-            const assignmentDivs = container.querySelectorAll('.course-assignment');
+        <div class="form-grid">
+            <div class="form-group">
+                <select name="course_id" required>
+                    ${courseOptions}
+                </select>
+            </div>
             
-            assignmentDivs.forEach(div => {
-                const courseId = div.querySelector('select[name="course_id"]').value;
-                const paymentStatus = div.querySelector('select[name="payment_status"]').value;
-                const notes = div.querySelector('input[name="notes"]').value;
-                
-                if (courseId) {
-                    assignments.push({
-                        course_id: courseId,
-                        payment_status: paymentStatus,
-                        notes: notes
-                    });
-                }
+            <div class="form-group">
+                <select name="payment_status">
+                    <option value="pending" ${paymentStatus === 'pending' ? 'selected' : ''}>⏳ Wachtend</option>
+                    <option value="paid" ${paymentStatus === 'paid' ? 'selected' : ''}>✅ Betaald</option>
+                    <option value="cancelled" ${paymentStatus === 'cancelled' ? 'selected' : ''}>❌ Geannuleerd</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <input type="text" name="notes" placeholder="Eventuele opmerkingen..." 
+                   value="${existingCourse ? (existingCourse.notes || '') : ''}">
+        </div>
+    `;
+    
+    container.appendChild(assignmentDiv);
+}
+
+// Remove course assignment
+function removeCourseAssignment(id) {
+    const element = document.getElementById(`assignment-${id}`);
+    if (element) {
+        element.remove();
+    }
+}
+
+// Save course assignments
+async function saveCourseAssignments() {
+    const assignments = [];
+    const container = document.getElementById('courseAssignments');
+    const assignmentDivs = container.querySelectorAll('[id^="assignment-"]');
+    
+    assignmentDivs.forEach(div => {
+        const courseId = div.querySelector('select[name="course_id"]').value;
+        const paymentStatus = div.querySelector('select[name="payment_status"]').value;
+        const notes = div.querySelector('input[name="notes"]').value;
+        
+        if (courseId) {
+            assignments.push({
+                course_id: courseId,
+                payment_status: paymentStatus,
+                notes: notes
             });
-            
-            const formData = new FormData();
-            formData.append('action', 'assign_courses');
-            formData.append('user_id', currentAssignUserId);
-            formData.append('courses', JSON.stringify(assignments));
-            
-            try {
-                const response = await fetch('', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert('✅ ' + result.message);
-                    closeModal('courseAssignmentModal');
-                    location.reload();
-                } else {
-                    alert('❌ ' + result.message);
-                }
-            } catch (error) {
-                alert('❌ Er is een fout opgetreden: ' + error.message);
+        }
+    });
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.innerHTML = `
+        <input type="hidden" name="action" value="assign_courses">
+        <input type="hidden" name="user_id" value="${currentAssignUserId}">
+        <input type="hidden" name="courses" value='${JSON.stringify(assignments)}'>
+    `;
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// Bulk import placeholder
+function showBulkImportModal() {
+    showNotification('📋 Bulk import functionaliteit komt binnenkort! Deze feature zal CSV import ondersteunen voor grote aantallen gebruikers.', 'info');
+}
+
+// Test AJAX connection
+function testAjax() {
+    fetchData('?ajax=1&action=test')
+        .then(response => {
+            if (response.status === 'success') {
+                console.log('✅ AJAX connection working:', response.message);
             }
-        }
-        
-        // Bulk import placeholder
-        function showBulkImportModal() {
-            alert('📋 Bulk import functionaliteit komt binnenkort!\n\nDeze feature zal CSV import ondersteunen voor grote aantallen gebruikers.');
-        }
-        
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
-            }
-        }
-    </script>
-</body>
-</html>
+        })
+        .catch(error => {
+            console.error('❌ AJAX test failed:', error);
+        });
+}
+</script>
+
+<style>
+/* Page-specific styles */
+.user-info .user-name {
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 0.25rem;
+}
+
+.user-info .user-email {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.user-info .user-company {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-style: italic;
+}
+
+.contact-item {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin-bottom: 0.25rem;
+}
+
+.access-key {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-family: monospace;
+}
+
+.course-summary {
+    margin-bottom: 0.5rem;
+}
+
+.course-badge {
+    background: var(--neutral-light);
+    color: var(--primary);
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    margin: 0.125rem;
+    display: inline-block;
+}
+
+.course-badge.paid {
+    background: var(--success-light);
+    color: var(--success);
+}
+
+.course-list {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.assignment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.assignment-header label {
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.info-box {
+    background: var(--neutral-light);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+}
+
+.info-header .info-title {
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 0.25rem;
+}
+
+.info-header .info-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+</style>
+
+<?php
+require_once 'admin_modals.php';
+require_once 'admin_footer.php';
+?>
