@@ -567,7 +567,7 @@ $stats = [
             </div>
             
             <div class="btn-group">
-                <button type="button" class="btn btn-primary" onclick="saveCourseAssignments()">
+                <button type="button" class="btn btn-primary" onclick="saveCourseAssignments(event)">
                     <i class="fas fa-save"></i> Cursussen Opslaan
                 </button>
                 <button type="button" class="btn btn-secondary" onclick="safeCloseModal('courseAssignmentModal')">
