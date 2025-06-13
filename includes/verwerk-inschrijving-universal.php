@@ -1,19 +1,41 @@
 <?php
 /**
- * Complete Registration Processor with Email System v6.3.1
- * ADDED: Full email system integration with professional templates
- * Features: Database enrollment + Email confirmations + Admin notifications
+ * Debug Processor - Find Email Integration Issue v6.3.2
+ * This version will help us identify exactly what's going wrong
  */
 
-session_start();
-require_once 'config.php';
+// Enable error reporting and clean output
+error_reporting(E_ALL);
+ini_set('display_errors', 0); // Don't display errors in output
+ini_set('log_errors', 1);
 
-// Email Configuration Constants (add these to config.php)
+// Clean any existing output
+if (ob_get_level()) {
+    ob_clean();
+}
+
+// Debug logging function
+function debugLog($message, $step = '') {
+    $timestamp = date('Y-m-d H:i:s');
+    error_log("[$timestamp] DEBUG STEP $step: $message");
+}
+
+debugLog("Processor started", "START");
+
+session_start();
+debugLog("Session started", "1");
+
+require_once 'config.php';
+debugLog("Config loaded", "2");
+
+// Email Configuration Constants - SAFE FALLBACKS
 if (!defined('SITE_NAME')) define('SITE_NAME', 'Inventijn');
 if (!defined('SITE_URL')) define('SITE_URL', 'https://inventijn.nl');
 if (!defined('ADMIN_EMAIL')) define('ADMIN_EMAIL', 'martijn@inventijn.nl');
-if (!defined('FROM_EMAIL')) define('FROM_EMAIL', 'noreply@inventijn.nl');
+if (!defined('FROM_EMAIL')) define('FROM_EMAIL', 'martijn@inventijn.nl'); // Use your email as fallback
 if (!defined('FROM_NAME')) define('FROM_NAME', 'Inventijn Training');
+
+debugLog("Email constants defined", "3");
 
 // Security headers
 header('X-Content-Type-Options: nosniff');
@@ -21,32 +43,49 @@ header('X-Frame-Options: DENY');
 header('X-XSS-Protection: 1; mode=block');
 header('Content-Type: text/plain; charset=utf-8');
 
+debugLog("Headers set", "4");
+
 // Security: Only allow POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    debugLog("Invalid method: " . $_SERVER['REQUEST_METHOD'], "ERROR");
     http_response_code(405);
-    exit('method_not_allowed');
+    echo 'method_not_allowed';
+    exit;
 }
+
+debugLog("POST method confirmed", "5");
 
 // Honeypot spam protection
 if (!empty($_POST['website'])) {
-    exit('spam_detected');
+    debugLog("Spam detected", "SECURITY");
+    echo 'spam_detected';
+    exit;
 }
+
+debugLog("Spam check passed", "6");
 
 // Get database connection
 try {
+    debugLog("Attempting database connection", "7");
     $pdo = getDatabase();
+    debugLog("Database connected successfully", "8");
 } catch (Exception $e) {
-    error_log("Database connection failed: " . $e->getMessage());
-    exit('database_error');
+    debugLog("Database connection failed: " . $e->getMessage(), "ERROR");
+    echo 'database_error';
+    exit;
 }
 
 // Validate required fields
 $required_fields = ['training_type', 'training_name', 'naam', 'email'];
 foreach ($required_fields as $field) {
     if (empty($_POST[$field])) {
-        exit("missing_field_$field");
+        debugLog("Missing field: $field", "VALIDATION");
+        echo "missing_field_$field";
+        exit;
     }
 }
+
+debugLog("Required fields validated", "9");
 
 // Sanitize input data
 $data = [
@@ -69,376 +108,173 @@ $data = [
     'budget_indicatie' => $_POST['budget_indicatie'] ?? '',
 ];
 
+debugLog("Data sanitized", "10");
+
 // Validate email
 if (!$data['email']) {
-    exit('invalid_email');
+    debugLog("Invalid email", "VALIDATION");
+    echo 'invalid_email';
+    exit;
 }
 
 // Validate name
 if (strlen($data['naam']) < 2) {
-    exit('invalid_name');
+    debugLog("Invalid name", "VALIDATION");
+    echo 'invalid_name';
+    exit;
 }
 
-// ===== EMAIL SYSTEM FUNCTIONS =====
+debugLog("Email and name validated", "11");
+
+// ===== SIMPLIFIED EMAIL FUNCTIONS (with error handling) =====
 
 /**
- * Enhanced Email Sending Function
+ * Simple Email Sending Function with Debug
  */
-function sendConfirmationEmail($type, $data, $result_id = null) {
+function sendSimpleEmail($to_email, $to_name, $subject, $message) {
     try {
-        // Get email template and content
-        $email_content = getEmailTemplate($type, $data, $result_id);
+        debugLog("Attempting to send email to: $to_email", "EMAIL");
         
-        if (!$email_content) {
-            error_log("No email template found for type: $type");
-            return false;
-        }
+        // Simple headers
+        $headers = array();
+        $headers[] = 'MIME-Version: 1.0';
+        $headers[] = 'Content-Type: text/html; charset=UTF-8';
+        $headers[] = 'From: ' . FROM_NAME . ' <' . FROM_EMAIL . '>';
+        $headers[] = 'Reply-To: ' . ADMIN_EMAIL;
         
-        // Send to participant
-        $participant_sent = sendEmail(
-            $data['email'],
-            $data['naam'],
-            $email_content['subject'],
-            $email_content['body_html'],
-            $email_content['body_text']
-        );
+        // Send email
+        $success = mail($to_email, $subject, $message, implode("\r\n", $headers));
         
-        // Send admin notification
-        $admin_sent = sendAdminNotification($type, $data, $result_id);
-        
-        // Log results
-        error_log("Email sent - Participant: " . ($participant_sent ? 'SUCCESS' : 'FAILED') . 
-                 ", Admin: " . ($admin_sent ? 'SUCCESS' : 'FAILED'));
-        
-        return $participant_sent;
+        debugLog("Email send result: " . ($success ? 'SUCCESS' : 'FAILED'), "EMAIL");
+        return $success;
         
     } catch (Exception $e) {
-        error_log("Email sending error: " . $e->getMessage());
+        debugLog("Email error: " . $e->getMessage(), "EMAIL_ERROR");
         return false;
     }
 }
 
 /**
- * Core Email Sending Function
+ * Simple Email Templates
  */
-function sendEmail($to_email, $to_name, $subject, $html_body, $text_body = null) {
-    // Create professional headers
-    $headers = array();
-    $headers[] = 'MIME-Version: 1.0';
-    $headers[] = 'Content-Type: text/html; charset=UTF-8';
-    $headers[] = 'From: ' . FROM_NAME . ' <' . FROM_EMAIL . '>';
-    $headers[] = 'Reply-To: ' . ADMIN_EMAIL;
-    $headers[] = 'X-Mailer: PHP/' . phpversion();
-    $headers[] = 'X-Priority: 3';
-    
-    // Anti-spam headers
-    $headers[] = 'X-Originating-IP: ' . ($_SERVER['SERVER_ADDR'] ?? 'unknown');
-    $headers[] = 'Message-ID: <' . uniqid() . '@inventijn.nl>';
-    $headers[] = 'Date: ' . date('r');
-    
-    // Send email
-    $success = mail(
-        $to_email,
-        $subject,
-        $html_body,
-        implode("\r\n", $headers)
-    );
-    
-    // Log email attempt
-    error_log("Email attempt to $to_email - Subject: $subject - Result: " . ($success ? 'SUCCESS' : 'FAILED'));
-    
-    return $success;
-}
-
-/**
- * Email Template Generator
- */
-function getEmailTemplate($type, $data, $result_id = null) {
-    $templates = [
-        'enrollment' => [
-            'subject' => "Inschrijving bevestigd: {$data['training_name']}",
-            'admin_subject' => "Nieuwe inschrijving: {$data['naam']} voor {$data['training_name']}"
-        ],
-        'interest' => [
-            'subject' => "Interesse geregistreerd: {$data['training_name']}",
-            'admin_subject' => "Nieuwe interesse: {$data['naam']} voor {$data['training_name']}"
-        ],
-        'incompany' => [
-            'subject' => "Incompany aanvraag ontvangen: {$data['training_name']}",
-            'admin_subject' => "Nieuwe incompany aanvraag: {$data['naam']} - {$data['training_name']}"
-        ],
-        'waitlist' => [
-            'subject' => "Wachtlijst: {$data['training_name']}",
-            'admin_subject' => "Wachtlijst toevoeging: {$data['naam']} voor {$data['training_name']}"
-        ]
-    ];
-    
-    if (!isset($templates[$type])) {
-        return null;
-    }
-    
-    $template = $templates[$type];
-    
-    return [
-        'subject' => $template['subject'],
-        'body_html' => generateEmailHTML($type, $data, $result_id),
-        'body_text' => generateEmailText($type, $data, $result_id),
-        'admin_subject' => $template['admin_subject']
-    ];
-}
-
-/**
- * HTML Email Template Generator
- */
-function generateEmailHTML($type, $data, $result_id) {
-    $current_year = date('Y');
-    $naam = htmlspecialchars($data['naam']);
-    $training = htmlspecialchars($data['training_name']);
-    
-    $content = getEmailContent($type, $data, $result_id);
-    
-    return "
-    <!DOCTYPE html>
-    <html lang='nl'>
-    <head>
-        <meta charset='UTF-8'>
-        <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-        <title>$training</title>
-    </head>
-    <body style='margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f8fafc;'>
-        <div style='max-width: 600px; margin: 0 auto; background-color: white;'>
-            
-            <!-- Header -->
-            <div style='background: linear-gradient(135deg, #3e5cc6 0%, #b998e4 100%); padding: 30px 20px; text-align: center;'>
-                <h1 style='color: white; margin: 0; font-size: 28px; font-weight: 300;'>Inventijn</h1>
-                <p style='color: #e3a1e5; margin: 10px 0 0 0; font-size: 14px;'>Praktische AI Training</p>
-            </div>
-            
-            <!-- Content -->
-            <div style='padding: 40px 30px;'>
-                $content
-            </div>
-            
-            <!-- Footer -->
-            <div style='background-color: #f8fafc; padding: 30px; text-align: center; border-top: 1px solid #e5e7eb;'>
-                <p style='margin: 0 0 10px 0; color: #6b7280; font-size: 14px;'>
-                    <strong>Inventijn</strong><br>
-                    Praktische AI Training voor Professionals
-                </p>
-                <p style='margin: 0; color: #9ca3af; font-size: 12px;'>
-                    Vragen? Reageer gerust op deze e-mail<br>
-                    © $current_year Inventijn. Alle rechten voorbehouden.
-                </p>
-            </div>
-        </div>
-    </body>
-    </html>";
-}
-
-/**
- * Email Content Based on Type
- */
-function getEmailContent($type, $data, $result_id) {
+function getSimpleEmailContent($type, $data) {
     $naam = htmlspecialchars($data['naam']);
     $training = htmlspecialchars($data['training_name']);
     
     switch ($type) {
         case 'enrollment':
-            return "
-                <h2 style='color: #1f2937; margin: 0 0 20px 0;'>🎉 Inschrijving Bevestigd!</h2>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151;'>Beste $naam,</p>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151;'>
-                    Geweldig! Je inschrijving voor <strong>$training</strong> is succesvol ontvangen.
-                </p>
-                
-                <div style='background: #eff6ff; border-left: 4px solid #2563eb; padding: 20px; margin: 20px 0;'>
-                    <h3 style='color: #1e40af; margin: 0 0 10px 0;'>Volgende stappen:</h3>
-                    <ol style='color: #1e40af; margin: 0; padding-left: 20px;'>
-                        <li>Je wordt doorgeleid naar de betaalpagina</li>
-                        <li>Na betaling is je plaats definitief gereserveerd</li>
-                        <li>Een week voor de training ontvang je alle praktische informatie</li>
-                    </ol>
-                </div>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151; margin-top: 30px;'>
-                    Ik kijk er naar uit je te ontmoeten bij de training!<br><br>
-                    
-                    Met vriendelijke groet,<br>
-                    <strong>Martijn Planken</strong><br>
-                    <em>Trainer & AI Specialist</em>
-                </p>";
-                
+            return [
+                'subject' => "Inschrijving bevestigd: $training",
+                'participant' => "
+                    <h2>Inschrijving Bevestigd!</h2>
+                    <p>Beste $naam,</p>
+                    <p>Je inschrijving voor <strong>$training</strong> is ontvangen!</p>
+                    <p>Volgende stappen: betaling → bevestiging → praktische info.</p>
+                    <p>Met vriendelijke groet,<br>Martijn Planken<br>Inventijn</p>
+                ",
+                'admin' => "
+                    <h2>Nieuwe Inschrijving</h2>
+                    <p><strong>Training:</strong> $training</p>
+                    <p><strong>Naam:</strong> $naam</p>
+                    <p><strong>Email:</strong> {$data['email']}</p>
+                    <p><strong>Telefoon:</strong> {$data['telefoon']}</p>
+                    <p><strong>Organisatie:</strong> {$data['organisatie']}</p>
+                "
+            ];
+            
         case 'interest':
-            return "
-                <h2 style='color: #1f2937; margin: 0 0 20px 0;'>📝 Interesse Geregistreerd</h2>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151;'>Beste $naam,</p>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151;'>
-                    Bedankt voor je interesse in <strong>$training</strong>!
-                </p>
-                
-                <div style='background: #ecfdf5; border-left: 4px solid #10b981; padding: 20px; margin: 20px 0;'>
-                    <h3 style='color: #065f46; margin: 0 0 10px 0;'>Wat gebeurt er nu?</h3>
-                    <ul style='color: #065f46; margin: 0; padding-left: 20px;'>
-                        <li>Zodra we nieuwe data plannen, ben je de eerste die het hoort</li>
-                        <li>Je ontvangt tijdig een uitnodiging om in te schrijven</li>
-                        <li>Geen verplichtingen - je kunt altijd afzien</li>
-                    </ul>
-                </div>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151; margin-top: 30px;'>
-                    Tot binnenkort!<br><br>
-                    
-                    Met vriendelijke groet,<br>
-                    <strong>Martijn Planken</strong><br>
-                    <em>Inventijn</em>
-                </p>";
-                
+            return [
+                'subject' => "Interesse geregistreerd: $training",
+                'participant' => "
+                    <h2>Interesse Geregistreerd</h2>
+                    <p>Beste $naam,</p>
+                    <p>Bedankt voor je interesse in <strong>$training</strong>!</p>
+                    <p>We houden je op de hoogte van nieuwe data.</p>
+                    <p>Met vriendelijke groet,<br>Martijn Planken<br>Inventijn</p>
+                ",
+                'admin' => "
+                    <h2>Nieuwe Interesse</h2>
+                    <p><strong>Training:</strong> $training</p>
+                    <p><strong>Naam:</strong> $naam</p>
+                    <p><strong>Email:</strong> {$data['email']}</p>
+                "
+            ];
+            
         case 'incompany':
-            return "
-                <h2 style='color: #1f2937; margin: 0 0 20px 0;'>🏢 Incompany Aanvraag Ontvangen</h2>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151;'>Beste $naam,</p>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151;'>
-                    Je aanvraag voor incompany training <strong>$training</strong> is ontvangen!
-                </p>
-                
-                <div style='background: #fef3c7; border-left: 4px solid #f59e0b; padding: 20px; margin: 20px 0;'>
-                    <h3 style='color: #92400e; margin: 0 0 10px 0;'>Volgende stappen:</h3>
-                    <ul style='color: #92400e; margin: 0; padding-left: 20px;'>
-                        <li>Ik neem binnen <strong>2 werkdagen</strong> persoonlijk contact met je op</li>
-                        <li>We bespreken jullie specifieke behoeften en mogelijkheden</li>
-                        <li>Ik maak een passend voorstel op maat</li>
-                    </ul>
-                </div>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151; margin-top: 30px;'>
-                    Ik kijk uit naar ons gesprek!<br><br>
-                    
-                    Met vriendelijke groet,<br>
-                    <strong>Martijn Planken</strong><br>
-                    <em>Inventijn - AI Training op Maat</em>
-                </p>";
-                
-        case 'waitlist':
-            return "
-                <h2 style='color: #1f2937; margin: 0 0 20px 0;'>⏳ Wachtlijst Bevestiging</h2>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151;'>Beste $naam,</p>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151;'>
-                    De training <strong>$training</strong> is helaas vol, maar je bent toegevoegd aan de wachtlijst.
-                </p>
-                
-                <div style='background: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; margin: 20px 0;'>
-                    <h3 style='color: #991b1b; margin: 0 0 10px 0;'>Wat betekent dit?</h3>
-                    <ul style='color: #991b1b; margin: 0; padding-left: 20px;'>
-                        <li>Bij een annulering ben je de eerste die het hoort</li>
-                        <li>We planning regelmatig nieuwe data - je krijgt voorrang</li>
-                        <li>Geen kosten of verplichtingen</li>
-                    </ul>
-                </div>
-                
-                <p style='font-size: 16px; line-height: 1.6; color: #374151; margin-top: 30px;'>
-                    Hopelijk tot snel!<br><br>
-                    
-                    Met vriendelijke groet,<br>
-                    <strong>Martijn Planken</strong><br>
-                    <em>Inventijn</em>
-                </p>";
-                
+            return [
+                'subject' => "Incompany aanvraag: $training",
+                'participant' => "
+                    <h2>Incompany Aanvraag Ontvangen</h2>
+                    <p>Beste $naam,</p>
+                    <p>Je aanvraag voor <strong>$training</strong> is ontvangen!</p>
+                    <p>Ik neem binnen 2 werkdagen contact op.</p>
+                    <p>Met vriendelijke groet,<br>Martijn Planken<br>Inventijn</p>
+                ",
+                'admin' => "
+                    <h2>Nieuwe Incompany Aanvraag</h2>
+                    <p><strong>Training:</strong> $training</p>
+                    <p><strong>Naam:</strong> $naam</p>
+                    <p><strong>Email:</strong> {$data['email']}</p>
+                    <p><strong>Deelnemers:</strong> {$data['aantal_deelnemers']}</p>
+                "
+            ];
+            
         default:
-            return "<p>Bedankt voor je aanmelding voor $training!</p>";
+            return [
+                'subject' => "Aanmelding: $training",
+                'participant' => "<p>Beste $naam,<br>Bedankt voor je aanmelding!</p>",
+                'admin' => "<p>Nieuwe aanmelding van $naam voor $training</p>"
+            ];
     }
 }
 
 /**
- * Plain Text Version (fallback)
+ * Send Confirmation Emails (Simplified)
  */
-function generateEmailText($type, $data, $result_id) {
-    $naam = $data['naam'];
-    $training = $data['training_name'];
-    
-    return "Beste $naam,\n\nBedankt voor je aanmelding voor $training!\n\nMet vriendelijke groet,\nMartijn Planken\nInventijn";
-}
-
-/**
- * Admin Notification System
- */
-function sendAdminNotification($type, $data, $result_id) {
-    $email_content = getEmailTemplate($type, $data, $result_id);
-    
-    if (!$email_content) {
+function sendConfirmationEmail($type, $data, $result_id = null) {
+    try {
+        debugLog("Starting email send for type: $type", "EMAIL_START");
+        
+        $email_content = getSimpleEmailContent($type, $data);
+        
+        if (!$email_content) {
+            debugLog("No email template for type: $type", "EMAIL_ERROR");
+            return false;
+        }
+        
+        // Send to participant
+        $participant_sent = sendSimpleEmail(
+            $data['email'],
+            $data['naam'],
+            $email_content['subject'],
+            $email_content['participant']
+        );
+        
+        // Send to admin
+        $admin_sent = sendSimpleEmail(
+            ADMIN_EMAIL,
+            'Martijn Planken',
+            'Admin: ' . $email_content['subject'],
+            $email_content['admin']
+        );
+        
+        debugLog("Email results - Participant: " . ($participant_sent ? 'OK' : 'FAIL') . 
+                ", Admin: " . ($admin_sent ? 'OK' : 'FAIL'), "EMAIL_RESULT");
+        
+        return $participant_sent;
+        
+    } catch (Exception $e) {
+        debugLog("Email function error: " . $e->getMessage(), "EMAIL_ERROR");
         return false;
     }
-    
-    $admin_body = generateAdminNotificationHTML($type, $data, $result_id);
-    
-    return sendEmail(
-        ADMIN_EMAIL,
-        'Martijn Planken',
-        $email_content['admin_subject'],
-        $admin_body
-    );
 }
 
-/**
- * Admin Notification HTML
- */
-function generateAdminNotificationHTML($type, $data, $result_id) {
-    $type_labels = [
-        'enrollment' => '🎓 NIEUWE INSCHRIJVING',
-        'interest' => '📝 NIEUWE INTERESSE', 
-        'incompany' => '🏢 INCOMPANY AANVRAAG',
-        'waitlist' => '⏳ WACHTLIJST TOEVOEGING'
-    ];
-    
-    $label = $type_labels[$type] ?? 'NIEUWE AANMELDING';
-    $naam = htmlspecialchars($data['naam']);
-    $email = htmlspecialchars($data['email']);
-    $training = htmlspecialchars($data['training_name']);
-    
-    $html = "
-    <div style='font-family: Arial, sans-serif; max-width: 600px;'>
-        <div style='background: #1f2937; color: white; padding: 20px; text-align: center;'>
-            <h1 style='margin: 0; font-size: 24px;'>$label</h1>
-        </div>
-        
-        <div style='padding: 20px; background: white;'>
-            <h2 style='color: #1f2937; margin-top: 0;'>$training</h2>
-            
-            <table style='width: 100%; border-collapse: collapse;'>
-                <tr><td style='font-weight: bold; padding: 8px 0; border-bottom: 1px solid #e5e7eb;'>Naam:</td><td style='padding: 8px 0; border-bottom: 1px solid #e5e7eb;'>$naam</td></tr>
-                <tr><td style='font-weight: bold; padding: 8px 0; border-bottom: 1px solid #e5e7eb;'>Email:</td><td style='padding: 8px 0; border-bottom: 1px solid #e5e7eb;'><a href='mailto:$email'>$email</a></td></tr>";
-    
-    if (!empty($data['telefoon'])) {
-        $telefoon = htmlspecialchars($data['telefoon']);
-        $html .= "<tr><td style='font-weight: bold; padding: 8px 0; border-bottom: 1px solid #e5e7eb;'>Telefoon:</td><td style='padding: 8px 0; border-bottom: 1px solid #e5e7eb;'>$telefoon</td></tr>";
-    }
-    
-    if (!empty($data['organisatie'])) {
-        $organisatie = htmlspecialchars($data['organisatie']);
-        $html .= "<tr><td style='font-weight: bold; padding: 8px 0; border-bottom: 1px solid #e5e7eb;'>Organisatie:</td><td style='padding: 8px 0; border-bottom: 1px solid #e5e7eb;'>$organisatie</td></tr>";
-    }
-    
-    if (!empty($data['opmerkingen'])) {
-        $html .= "</table><h3 style='color: #1f2937; margin-top: 20px;'>Opmerkingen:</h3>";
-        $html .= "<p style='background: #f8fafc; padding: 15px; border-radius: 8px;'>" . nl2br(htmlspecialchars($data['opmerkingen'])) . "</p><table style='width: 100%; border-collapse: collapse;'>";
-    }
-    
-    $html .= "</table></div></div>";
-    
-    return $html;
-}
-
-// ===== DATABASE FUNCTIONS =====
+// ===== DATABASE FUNCTIONS (existing, working) =====
 
 function createOrGetUser($pdo, $naam, $email, $telefoon = '', $organisatie = '') {
     try {
+        debugLog("Creating/getting user: $email", "USER");
+        
         // Check if user exists
         $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
         $stmt->execute([$email]);
@@ -453,6 +289,7 @@ function createOrGetUser($pdo, $naam, $email, $telefoon = '', $organisatie = '')
             ");
             $stmt->execute([$naam, $telefoon, $organisatie, $email]);
             
+            debugLog("User updated: " . $existing_user['id'], "USER");
             return $existing_user['id'];
         } else {
             // Create new user
@@ -463,16 +300,19 @@ function createOrGetUser($pdo, $naam, $email, $telefoon = '', $organisatie = '')
             $stmt->execute([$naam, $email, $telefoon, $organisatie]);
             
             $user_id = $pdo->lastInsertId();
+            debugLog("User created: $user_id", "USER");
             return $user_id;
         }
     } catch (Exception $e) {
-        error_log("Error creating/updating user: " . $e->getMessage());
+        debugLog("User creation error: " . $e->getMessage(), "USER_ERROR");
         return false;
     }
 }
 
 function enrollUserInCourse($pdo, $user_id, $course_id) {
     try {
+        debugLog("Enrolling user $user_id in course $course_id", "ENROLL");
+        
         // Check if already enrolled
         $stmt = $pdo->prepare("
             SELECT id FROM course_participants 
@@ -480,6 +320,7 @@ function enrollUserInCourse($pdo, $user_id, $course_id) {
         ");
         $stmt->execute([$user_id, $course_id]);
         if ($stmt->fetch()) {
+            debugLog("User already enrolled", "ENROLL");
             return 'already_enrolled';
         }
         
@@ -500,14 +341,16 @@ function enrollUserInCourse($pdo, $user_id, $course_id) {
         $course_info = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$course_info) {
+            debugLog("Course not found: $course_id", "ENROLL");
             return 'course_not_found';
         }
         
         if ($course_info['current_participants'] >= $course_info['max_participants']) {
+            debugLog("Course full", "ENROLL");
             return 'course_full';
         }
         
-        // Enroll user WITHOUT 'source' column (matches your database)
+        // Enroll user
         $stmt = $pdo->prepare("
             INSERT INTO course_participants 
             (user_id, course_id, enrollment_date, payment_status)
@@ -516,16 +359,19 @@ function enrollUserInCourse($pdo, $user_id, $course_id) {
         $stmt->execute([$user_id, $course_id]);
         
         $enrollment_id = $pdo->lastInsertId();
+        debugLog("Enrollment successful: $enrollment_id", "ENROLL");
         return $enrollment_id;
         
     } catch (Exception $e) {
-        error_log("Error enrolling user: " . $e->getMessage());
+        debugLog("Enrollment error: " . $e->getMessage(), "ENROLL_ERROR");
         return false;
     }
 }
 
 function createInterest($pdo, $data) {
     try {
+        debugLog("Creating interest for: " . $data['email'], "INTEREST");
+        
         $periode_text = is_array($data['periode']) ? implode(', ', $data['periode']) : '';
         
         // Check for existing interest (duplicate prevention)
@@ -536,6 +382,7 @@ function createInterest($pdo, $data) {
         $stmt->execute([$data['email'], $data['training_name']]);
         
         if ($stmt->fetch()) {
+            debugLog("Duplicate interest detected", "INTEREST");
             return 'duplicate_interest';
         }
         
@@ -558,16 +405,19 @@ function createInterest($pdo, $data) {
         ]);
         
         $interest_id = $pdo->lastInsertId();
+        debugLog("Interest created: $interest_id", "INTEREST");
         return $interest_id;
         
     } catch (Exception $e) {
-        error_log("Error creating interest: " . $e->getMessage());
+        debugLog("Interest creation error: " . $e->getMessage(), "INTEREST_ERROR");
         return false;
     }
 }
 
 function createIncompanyRequest($pdo, $data) {
     try {
+        debugLog("Creating incompany request for: " . $data['email'], "INCOMPANY");
+        
         $stmt = $pdo->prepare("
             INSERT INTO incompany_requests 
             (naam, email, telefoon, organisatie, training_type, training_name,
@@ -591,10 +441,11 @@ function createIncompanyRequest($pdo, $data) {
         ]);
         
         $request_id = $pdo->lastInsertId();
+        debugLog("Incompany request created: $request_id", "INCOMPANY");
         return $request_id;
         
     } catch (Exception $e) {
-        error_log("Error creating incompany request: " . $e->getMessage());
+        debugLog("Incompany creation error: " . $e->getMessage(), "INCOMPANY_ERROR");
         return false;
     }
 }
@@ -602,22 +453,28 @@ function createIncompanyRequest($pdo, $data) {
 // ===== MAIN PROCESSING LOGIC =====
 
 try {
+    debugLog("Starting main processing", "MAIN");
     $pdo->beginTransaction();
     
     // Create or get user
+    debugLog("Creating user", "MAIN_USER");
     $user_id = createOrGetUser($pdo, $data['naam'], $data['email'], $data['telefoon'], $data['organisatie']);
     if (!$user_id) {
         throw new Exception("Failed to create/update user");
     }
+    
+    debugLog("User ID: $user_id", "MAIN");
     
     $result = null;
     $response_type = null;
     
     // Process based on registration type and course selection
     if ($data['training_type'] === 'incompany') {
+        debugLog("Processing incompany", "MAIN_INCOMPANY");
         // Incompany request
         $result = createIncompanyRequest($pdo, $data);
         if ($result) {
+            debugLog("Sending incompany email", "MAIN_EMAIL");
             sendConfirmationEmail('incompany', $data, $result);
             $response_type = 'incompany_created';
         } else {
@@ -625,10 +482,12 @@ try {
         }
         
     } else if (!empty($data['selected_course_id']) && $data['selected_course_id'] !== 'other' && is_numeric($data['selected_course_id'])) {
+        debugLog("Processing enrollment for course: " . $data['selected_course_id'], "MAIN_ENROLL");
         // Direct course enrollment
         $enrollment_result = enrollUserInCourse($pdo, $user_id, $data['selected_course_id']);
         
         if (is_numeric($enrollment_result)) {
+            debugLog("Sending enrollment email", "MAIN_EMAIL");
             // Successfully enrolled - send email and prepare for payment
             sendConfirmationEmail('enrollment', $data, $enrollment_result);
             
@@ -650,10 +509,12 @@ try {
         } else if ($enrollment_result === 'already_enrolled') {
             $response_type = 'already_enrolled';
         } else if ($enrollment_result === 'course_full') {
+            debugLog("Course full, creating interest", "MAIN_WAITLIST");
             // Course is full, create interest instead
             $interest_result = createInterest($pdo, $data);
             if ($interest_result && $interest_result !== 'duplicate_interest') {
-                sendConfirmationEmail('waitlist', $data, $interest_result);
+                debugLog("Sending waitlist email", "MAIN_EMAIL");
+                sendConfirmationEmail('interest', $data, $interest_result); // Use 'interest' template for waitlist
                 $response_type = 'waitlist_created';
             } else if ($interest_result === 'duplicate_interest') {
                 $response_type = 'duplicate_interest';
@@ -665,9 +526,11 @@ try {
         }
         
     } else {
+        debugLog("Processing interest registration", "MAIN_INTEREST");
         // Interest registration (other moment or no specific course)
         $result = createInterest($pdo, $data);
         if ($result && $result !== 'duplicate_interest') {
+            debugLog("Sending interest email", "MAIN_EMAIL");
             sendConfirmationEmail('interest', $data, $result);
             $response_type = 'interest_created';
         } else if ($result === 'duplicate_interest') {
@@ -677,7 +540,10 @@ try {
         }
     }
     
+    debugLog("Committing transaction", "MAIN_COMMIT");
     $pdo->commit();
+    
+    debugLog("Final response type: $response_type", "MAIN_RESPONSE");
     
     // Return appropriate response
     switch ($response_type) {
@@ -703,9 +569,13 @@ try {
             echo 'ok';
     }
     
+    debugLog("Response sent successfully", "END");
+    
 } catch (Exception $e) {
+    debugLog("Exception: " . $e->getMessage(), "ERROR");
     $pdo->rollback();
-    error_log("Registration error: " . $e->getMessage());
     echo 'error: ' . $e->getMessage();
 }
+
+debugLog("Script execution completed", "FINAL");
 ?>
