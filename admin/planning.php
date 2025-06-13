@@ -408,16 +408,54 @@ function getUserDetailsForPlanning($pdo, $user_id) {
 
 ?>
 
-<!-- Page Header -->
+<!-- Page Header Card -->
 <div class="card">
     <div class="card-header">
-        <h3><i class="fas fa-calendar-alt"></i> Planning Dashboard</h3>
         <div>
+            <h3><i class="fas fa-calendar-alt"></i> Planning Dashboard</h3>
             <span class="version-badge">v6.4.0 - Unified Edition</span>
-            <button onclick="refreshData()" class="btn btn-primary btn-sm">
+        </div>
+        <div style="display: flex; gap: var(--space-2);">
+            <button onclick="refreshData()" class="btn btn-primary">
                 <i class="fas fa-sync-alt"></i> Refresh
             </button>
+            <a href="courses.php" class="btn btn-success">
+                <i class="fas fa-plus"></i> New Course
+            </a>
         </div>
+    </div>
+    <div class="course-essentials">
+        <?php foreach ($conversionStats as $stat): ?>
+        <div class="essential-item">
+            <div class="essential-label">
+                <?php
+                $icons = [
+                    'Total Interest' => 'fas fa-heart',
+                    'Pending Conversion' => 'fas fa-clock',
+                    'Successfully Converted' => 'fas fa-check-circle',
+                    'High Priority' => 'fas fa-flag',
+                    'Ready for Certificates' => 'fas fa-certificate'
+                ];
+                $icon = $icons[$stat['metric']] ?? 'fas fa-info-circle';
+                ?>
+                <i class="<?= $icon ?>"></i> <?= $stat['metric'] ?>
+            </div>
+            <div class="essential-value" style="color: var(--<?= $stat['type'] === 'danger' ? 'error' : ($stat['type'] === 'warning' ? 'warning' : ($stat['type'] === 'success' ? 'success' : 'primary')) ?>);">
+                <?= $stat['value'] ?>
+            </div>
+            <?php if ($stat['metric'] === 'Ready for Certificates' && $stat['value'] > 0): ?>
+                <a href="certificates.php?ready=1" style="font-size: 0.75rem; color: var(--primary); text-decoration: none;">
+                    → Generate Certificates
+                </a>
+            <?php elseif ($stat['metric'] === 'High Priority' && $stat['value'] > 0): ?>
+                <div style="font-size: 0.75rem; color: var(--error);">Needs attention</div>
+            <?php elseif ($stat['metric'] === 'Successfully Converted'): ?>
+                <a href="courses.php" style="font-size: 0.75rem; color: var(--primary); text-decoration: none;">
+                    → View Courses
+                </a>
+            <?php endif; ?>
+        </div>
+        <?php endforeach; ?>
     </div>
 </div>
 
@@ -437,67 +475,32 @@ function getUserDetailsForPlanning($pdo, $user_id) {
 <!-- Tab Navigation -->
 <div class="tab-navigation">
     <div class="tab-links">
-        <a href="#dashboard" class="tab-button active">
-            <i class="fas fa-chart-bar"></i> Dashboard
-        </a>
-        <a href="#interests" class="tab-button">
-            <i class="fas fa-heart"></i> Interests (<?= count($recentInterest) ?>)
+        <a href="#interests" class="tab-button active">
+            <i class="fas fa-heart"></i> Active Interests (<?= count($recentInterest) ?>)
         </a>
         <a href="#summary" class="tab-button">
-            <i class="fas fa-chart-pie"></i> Summary
+            <i class="fas fa-chart-pie"></i> Training Summary
+        </a>
+        <a href="#courses" class="tab-button">
+            <i class="fas fa-book"></i> Planned Courses (<?= count($plannedCourses) ?>)
         </a>
     </div>
     <div class="action-buttons">
-        <a href="courses.php" class="btn btn-success btn-sm">
-            <i class="fas fa-plus"></i> New Course
-        </a>
         <a href="../formulier-ai2.php" class="btn btn-secondary btn-sm">
             <i class="fas fa-edit"></i> Test Form
         </a>
-    </div>
-</div>
-
-<!-- Enhanced Statistics Overview -->
-<div class="stats-grid">
-    <?php foreach ($conversionStats as $stat): ?>
-    <div class="stat-card <?= $stat['type'] ?>">
-        <h3><?= $stat['metric'] ?></h3>
-        <div class="value"><?= $stat['value'] ?></div>
-        <?php if ($stat['metric'] === 'Ready for Certificates' && $stat['value'] > 0): ?>
-            <a href="certificates.php?ready=1" class="action-link">
-                <i class="fas fa-arrow-right"></i> Generate Certificates
-            </a>
-        <?php elseif ($stat['metric'] === 'High Priority' && $stat['value'] > 0): ?>
-            <div class="subtitle">Needs immediate attention</div>
-        <?php elseif ($stat['metric'] === 'Successfully Converted'): ?>
-            <a href="courses.php" class="action-link">
-                <i class="fas fa-arrow-right"></i> View Courses
-            </a>
-        <?php endif; ?>
-    </div>
-    <?php endforeach; ?>
-</div>
-
-<!-- Cross-Module Quick Actions -->
-<div class="card">
-    <div class="card-header">
-        <h3><i class="fas fa-link"></i> Quick Actions</h3>
-    </div>
-    <div class="btn-group">
-        <a href="courses.php" class="btn btn-primary">
-            <i class="fas fa-book"></i> Manage Courses
+        <a href="users.php" class="btn btn-outline btn-sm">
+            <i class="fas fa-users"></i> Users
         </a>
-        <a href="users.php" class="btn btn-secondary">
-            <i class="fas fa-users"></i> View Users
-        </a>
-        <a href="certificates.php" class="btn btn-success">
+        <a href="certificates.php" class="btn btn-outline btn-sm">
             <i class="fas fa-certificate"></i> Certificates
         </a>
-        <a href="../formulier-ai2.php" class="btn btn-warning">
-            <i class="fas fa-edit"></i> Test Form
-        </a>
     </div>
 </div>
+
+
+
+
 
 <!-- Main Interest Management -->
 <div class="card">
@@ -513,14 +516,6 @@ function getUserDetailsForPlanning($pdo, $user_id) {
             <i class="fas fa-inbox"></i>
             <p><strong>Geen openstaande interesse</strong></p>
             <p>Alle interesse is geconverteerd of er zijn nog geen nieuwe aanmeldingen.</p>
-            <div class="btn-group" style="justify-content: center; margin-top: 2rem;">
-                <a href="../formulier-ai2.php" class="btn btn-primary">
-                    <i class="fas fa-edit"></i> Test Formulier
-                </a>
-                <a href="courses.php" class="btn btn-secondary">
-                    <i class="fas fa-book"></i> Manage Courses
-                </a>
-            </div>
         </div>
     <?php else: ?>
     
