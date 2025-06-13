@@ -277,7 +277,7 @@ $stats = [
                 Beheer gebruikers, cursustoekenningen en betalingen vanuit één centrale plek
             </p>
         </div>
-        <button onclick="openModal('userModal')" class="btn btn-primary">
+        <button onclick="openUserModal()" class="btn btn-primary">
             <i class="fas fa-plus"></i> Nieuwe Gebruiker
         </button>
     </div>
@@ -364,7 +364,7 @@ $stats = [
         <div class="empty-state">
             <i class="fas fa-users"></i>
             <p>Geen gebruikers gevonden met de huidige filters.</p>
-            <button class="btn btn-primary" onclick="openModal('userModal')">
+            <button class="btn btn-primary" onclick="openUserModal()">
                 <i class="fas fa-plus"></i> Eerste Gebruiker
             </button>
         </div>
@@ -447,7 +447,7 @@ $stats = [
                             <button onclick="assignCourses(<?= $user['id'] ?>)" class="btn btn-sm btn-secondary" title="Cursussen">
                                 <i class="fas fa-book"></i>
                             </button>
-                            <button onclick="confirmDelete('<?= htmlspecialchars($user['name']) ?>', () => deleteUser(<?= $user['id'] ?>))" 
+                            <button onclick="safeConfirmDelete('<?= htmlspecialchars($user['name']) ?>', () => deleteUser(<?= $user['id'] ?>))" 
                                     class="btn btn-sm btn-danger" title="Deactiveren">
                                 <i class="fas fa-trash"></i>
                             </button>
@@ -485,25 +485,71 @@ $stats = [
 <?php endif; ?>
 
 <!-- User Modal -->
-<?php
-$userFields = [
-    ['name' => 'name', 'label' => 'Volledige Naam', 'type' => 'text', 'required' => true],
-    ['name' => 'email', 'label' => 'E-mailadres', 'type' => 'email', 'required' => true],
-    ['name' => 'phone', 'label' => 'Telefoonnummer', 'type' => 'tel'],
-    ['name' => 'company', 'label' => 'Bedrijf', 'type' => 'text'],
-    ['name' => 'notes', 'label' => 'Notities', 'type' => 'textarea', 'rows' => 3, 'full_width' => true, 'placeholder' => 'Eventuele opmerkingen...'],
-    ['name' => 'active', 'label' => 'Gebruiker is actief', 'type' => 'checkbox']
-];
-
-echo renderCrudModal('user', $userFields);
-?>
+<div id="userModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="userModalTitle">Nieuwe Gebruiker</h3>
+            <button class="modal-close" onclick="safeCloseModal('userModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form method="POST" id="userForm">
+                <input type="hidden" name="action" value="create_user" id="userAction">
+                <input type="hidden" name="user_id" id="userId">
+                
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="name">Volledige Naam *</label>
+                        <input type="text" id="name" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="email">E-mailadres *</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                </div>
+                
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="phone">Telefoonnummer</label>
+                        <input type="tel" id="phone" name="phone">
+                    </div>
+                    <div class="form-group">
+                        <label for="company">Bedrijf</label>
+                        <input type="text" id="company" name="company">
+                    </div>
+                </div>
+                
+                <div class="form-group full-width">
+                    <label for="notes">Notities</label>
+                    <textarea id="notes" name="notes" rows="3" placeholder="Eventuele opmerkingen..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="active" name="active" value="1" checked>
+                        Gebruiker is actief
+                    </label>
+                </div>
+                
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i>
+                        <span id="userModalSubmitText">Gebruiker Aanmaken</span>
+                    </button>
+                    <button type="button" onclick="safeCloseModal('userModal')" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Annuleren
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <!-- Course Assignment Modal -->
 <div id="courseAssignmentModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-book"></i> Cursussen Toekennen</h3>
-            <button class="modal-close" onclick="closeModal('courseAssignmentModal')">&times;</button>
+            <button class="modal-close" onclick="safeCloseModal('courseAssignmentModal')">&times;</button>
         </div>
         <div class="modal-body">
             <div id="user_course_info" style="background: var(--surface-hover); padding: var(--space-4); border-radius: var(--radius-sm); margin-bottom: var(--space-4);">
@@ -524,7 +570,7 @@ echo renderCrudModal('user', $userFields);
                 <button type="button" class="btn btn-primary" onclick="saveCourseAssignments()">
                     <i class="fas fa-save"></i> Cursussen Opslaan
                 </button>
-                <button type="button" class="btn btn-secondary" onclick="closeModal('courseAssignmentModal')">
+                <button type="button" class="btn btn-secondary" onclick="safeCloseModal('courseAssignmentModal')">
                     <i class="fas fa-times"></i> Annuleren
                 </button>
             </div>
@@ -570,6 +616,11 @@ function applyFilters() {
 
 // Course assignment functions
 async function assignCourses(userId) {
+    if (!checkRequiredFunctions()) {
+        alert('❌ System functions not loaded. Please refresh the page.');
+        return;
+    }
+    
     const user = usersData.find(u => u.id == userId);
     if (!user) {
         showNotification('Gebruiker niet gevonden', 'error');
@@ -593,11 +644,11 @@ async function assignCourses(userId) {
     
     // Get current course assignments
     try {
-        openLoadingModal();
+        safeOpenLoadingModal();
         
         const result = await fetchData(`?ajax=1&action=get_user_courses&user_id=${userId}`);
         
-        closeLoadingModal();
+        safeCloseLoadingModal();
         
         if (result.success) {
             // Clear assignments
@@ -609,15 +660,21 @@ async function assignCourses(userId) {
             });
             
             // Show modal
-            openModal('courseAssignmentModal');
-            showNotification('Cursussen geladen!', 'success');
+            safeOpenModal('courseAssignmentModal');
+            if (typeof showNotification !== 'undefined') {
+                showNotification('Cursussen geladen!', 'success');
+            }
         } else {
             showNotification('Fout bij laden: ' + (result.error || 'Onbekende fout'), 'error');
         }
     } catch (error) {
-        closeLoadingModal();
+        safeCloseLoadingModal();
         console.error('Error loading courses:', error);
-        showNotification('Fout bij laden: ' + error.message, 'error');
+        if (typeof showNotification !== 'undefined') {
+            showNotification('Fout bij laden: ' + error.message, 'error');
+        } else {
+            alert('Fout bij laden: ' + error.message);
+        }
     }
 }
 
@@ -721,16 +778,53 @@ async function saveCourseAssignments() {
         setButtonLoading(event.target, false);
         
         if (response.ok) {
-            showNotification('Cursussen opgeslagen!', 'success');
-            closeModal('courseAssignmentModal');
+            if (typeof showNotification !== 'undefined') {
+                showNotification('Cursussen opgeslagen!', 'success');
+            } else {
+                alert('Cursussen opgeslagen!');
+            }
+            safeCloseModal('courseAssignmentModal');
             setTimeout(() => location.reload(), 1000);
         } else {
             throw new Error('Server error: ' + response.status);
         }
     } catch (error) {
-        setButtonLoading(event.target, false);
+        if (typeof setButtonLoading !== 'undefined') {
+            setButtonLoading(event.target, false);
+        }
         console.error('Error saving courses:', error);
-        showNotification('Fout bij opslaan: ' + error.message, 'error');
+        if (typeof showNotification !== 'undefined') {
+            showNotification('Fout bij opslaan: ' + error.message, 'error');
+        } else {
+            alert('Fout bij opslaan: ' + error.message);
+        }
+    }
+}
+
+// Safe loading modal functions
+function safeOpenLoadingModal() {
+    if (typeof openLoadingModal !== 'undefined') {
+        openLoadingModal();
+    } else {
+        console.log('ℹ️ Loading modal not available, continuing...');
+    }
+}
+
+function safeCloseLoadingModal() {
+    if (typeof closeLoadingModal !== 'undefined') {
+        closeLoadingModal();
+    } else {
+        console.log('ℹ️ Loading modal not available, continuing...');
+    }
+}
+function safeConfirmDelete(itemName, callback) {
+    if (typeof confirmDelete !== 'undefined') {
+        confirmDelete(itemName, callback);
+    } else {
+        // Fallback to standard confirm
+        if (confirm(`Weet je zeker dat je "${itemName}" wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.`)) {
+            callback();
+        }
     }
 }
 
@@ -747,14 +841,22 @@ async function deleteUser(userId) {
         });
         
         if (response.ok) {
-            showNotification('Gebruiker gedeactiveerd!', 'success');
+            if (typeof showNotification !== 'undefined') {
+                showNotification('Gebruiker gedeactiveerd!', 'success');
+            } else {
+                alert('Gebruiker gedeactiveerd!');
+            }
             setTimeout(() => location.reload(), 1000);
         } else {
             throw new Error('Server error: ' + response.status);
         }
     } catch (error) {
         console.error('Error deleting user:', error);
-        showNotification('Fout bij verwijderen: ' + error.message, 'error');
+        if (typeof showNotification !== 'undefined') {
+            showNotification('Fout bij verwijderen: ' + error.message, 'error');
+        } else {
+            alert('Fout bij verwijderen: ' + error.message);
+        }
     }
 }
 
@@ -763,14 +865,145 @@ function showBulkImportModal() {
     showNotification('Bulk import functionaliteit komt binnenkort!', 'info', 4000);
 }
 
+// Safe loading modal functions
+function safeOpenLoadingModal() {
+    if (typeof openLoadingModal !== 'undefined') {
+        openLoadingModal();
+    } else {
+        console.log('ℹ️ Loading modal not available, continuing...');
+    }
+}
+
+function safeCloseLoadingModal() {
+    if (typeof closeLoadingModal !== 'undefined') {
+        closeLoadingModal();
+    } else {
+        console.log('ℹ️ Loading modal not available, continuing...');
+    }
+}
+
+// Debug function to check if all required functions exist
+function checkRequiredFunctions() {
+    const requiredFunctions = [
+        'openModal', 'closeModal', 'showNotification', 'fetchData',
+        'setButtonLoading', 'fillFormFromData', 'resetForm', 'confirmDelete'
+    ];
+    
+    const missing = requiredFunctions.filter(fn => typeof window[fn] === 'undefined');
+    
+    if (missing.length > 0) {
+        console.error('❌ Missing functions:', missing);
+        console.log('💡 This usually means admin_footer.php is not loaded correctly');
+        return false;
+    } else {
+        console.log('✅ All required functions are available');
+        return true;
+    }
+}
+
+// Edit user function (replaces generateEditFunction)
+async function editUser(userId) {
+    if (!checkRequiredFunctions()) {
+        alert('❌ System functions not loaded. Please refresh the page.');
+        return;
+    }
+    
+    try {
+        safeOpenLoadingModal();
+        
+        const response = await fetchData(`?ajax=1&action=get_user&id=${userId}`);
+        
+        safeCloseLoadingModal();
+        
+        if (response.error) {
+            throw new Error(response.error);
+        }
+        
+        // Fill form
+        fillFormFromData('userForm', response);
+        
+        // Update form action and modal title  
+        document.getElementById('userAction').value = 'update_user';
+        document.getElementById('userId').value = response.id;
+        document.getElementById('userModalTitle').textContent = 'Gebruiker Bewerken';
+        document.getElementById('userModalSubmitText').textContent = 'Gebruiker Bijwerken';
+        
+        // Set active checkbox
+        document.getElementById('active').checked = response.active == '1';
+        
+        // Open modal
+        safeOpenModal('userModal');
+        if (typeof showNotification !== 'undefined') {
+            showNotification('Gebruiker geladen!', 'success');
+        }
+        
+    } catch (error) {
+        safeCloseLoadingModal();
+        console.error('Error loading user:', error);
+        if (typeof showNotification !== 'undefined') {
+            showNotification('Fout bij laden: ' + error.message, 'error');
+        } else {
+            alert('Fout bij laden: ' + error.message);
+        }
+    }
+}
+
+// Reset user form function  
+function resetUserForm() {
+    if (typeof resetForm !== 'undefined') {
+        resetForm('userForm');
+    }
+    
+    document.getElementById('userAction').value = 'create_user';
+    document.getElementById('userId').value = '';
+    document.getElementById('userModalTitle').textContent = 'Nieuwe Gebruiker';
+    document.getElementById('userModalSubmitText').textContent = 'Gebruiker Aanmaken';
+}
+
+// Safe modal functions
+function safeOpenModal(modalId) {
+    if (typeof openModal !== 'undefined') {
+        openModal(modalId);
+    } else {
+        console.error('❌ openModal function not available');
+        alert('Modal system niet beschikbaar. Ververs de pagina.');
+    }
+}
+
+function safeCloseModal(modalId) {
+    if (typeof closeModal !== 'undefined') {
+        closeModal(modalId);
+    } else {
+        // Fallback: hide modal manually
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'none';
+            document.body.style.overflow = '';
+        }
+    }
+}
+
+// Safe modal opener
+function openUserModal() {
+    resetUserForm();
+    safeOpenModal('userModal');
+}
+
 // Initialize page
 document.addEventListener('DOMContentLoaded', function() {
-    // Generate standard CRUD functions
-    generateEditFunction('user');
-    generateResetFunction('user');
+    // Check if all functions are available
+    checkRequiredFunctions();
     
-    // Test AJAX connection on load (for debugging)
+    // Test AJAX connection on load (for debugging)  
     console.log('🎯 Users page loaded. Test AJAX with: testAjax()');
+    
+    // Check if admin_footer.php loaded correctly
+    setTimeout(() => {
+        if (typeof openModal === 'undefined') {
+            console.error('❌ admin_footer.php not loaded correctly');
+            console.log('💡 Check if admin_footer.php exists and is included properly');
+        }
+    }, 100);
 });
 </script>
 
