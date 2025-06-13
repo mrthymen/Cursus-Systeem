@@ -1809,7 +1809,11 @@ function formatCourseDate($date) {
         document.getElementById('courseModalTitle').textContent = 'Nieuwe Cursus Aanmaken';
         document.getElementById('courseSubmitText').textContent = 'Cursus Aanmaken';
         document.getElementById('instructor').value = 'Martijn Planken';
-        updateLocationDescription();
+        
+        // Wait a bit for form reset to complete before updating location description
+        setTimeout(() => {
+            updateLocationDescription();
+        }, 10);
     }
 
     async function editCourse(courseId) {
@@ -1850,15 +1854,18 @@ function formatCourseDate($date) {
             document.getElementById('price').value = course.price || '';
             document.getElementById('course_incompany_available').checked = course.incompany_available == '1';
             
-            // Update location description
-            updateLocationDescription();
-            
             // Update modal titles
             document.getElementById('courseModalTitle').textContent = 'Cursus Bewerken';
             document.getElementById('courseSubmitText').textContent = 'Cursus Bijwerken';
             
-            // Open modal
+            // Open modal first
             openModal('courseModal');
+            
+            // Update location description after a short delay to ensure DOM is ready
+            setTimeout(() => {
+                updateLocationDescription();
+            }, 100);
+            
             showNotification('Cursus geladen!', 'success');
             
         } catch (error) {
@@ -1902,10 +1909,19 @@ function formatCourseDate($date) {
         const locationSelect = document.getElementById('location');
         const locationDescription = document.getElementById('location-description');
         
-        if (locationSelect && locationDescription) {
-            const selectedOption = locationSelect.options[locationSelect.selectedIndex];
-            const description = selectedOption.dataset.description || '';
-            locationDescription.textContent = description;
+        if (locationSelect && locationDescription && locationSelect.options.length > 0) {
+            const selectedIndex = locationSelect.selectedIndex;
+            if (selectedIndex >= 0 && selectedIndex < locationSelect.options.length) {
+                const selectedOption = locationSelect.options[selectedIndex];
+                if (selectedOption && selectedOption.dataset) {
+                    const description = selectedOption.dataset.description || '';
+                    locationDescription.textContent = description;
+                } else {
+                    locationDescription.textContent = '';
+                }
+            } else {
+                locationDescription.textContent = '';
+            }
         }
     }
 
