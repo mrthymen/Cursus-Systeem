@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Beheer - Unified System FIXED v6.4.4  
+ * Cursus Beheer - Unified System FIXED v6.4.5
  * Fixed version met echte database functies
  * Converted from original courses.php to unified system
  * Updated: 2025-06-13
@@ -17,6 +17,9 @@
  * v6.4.3 - FIXED: Improved JSON parsing with fallback error messages
  * v6.4.4 - FIXED: Added admin_modals.php include for shared modal functions
  * v6.4.4 - FIXED: Using shared generateEditFunction() instead of custom implementation
+ * v6.4.5 - FIXED: Removed admin_modals.php dependency - self-contained implementation
+ * v6.4.5 - FIXED: Complete standalone edit functions with debug mode
+ * v6.4.5 - FIXED: Added keyboard shortcuts and click-outside-to-close functionality
  */
 
 session_start();
@@ -125,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
         }
         
-        header('Location: courses.php' . (isset($_GET['tab']) ? '?tab=' . $_GET['tab'] : ''));
+        header('Location: courses_unified_FIXED.php' . (isset($_GET['tab']) ? '?tab=' . $_GET['tab'] : ''));
         exit;
     }
 }
