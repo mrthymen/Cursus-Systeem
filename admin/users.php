@@ -1,1087 +1,929 @@
 <?php
 /**
- * Inventijn User Management Systeem v6.4.0
- * Gebruikers beheer, cursus toekenning en betalingen
- * Converted to unified admin system
- * Updated: 2025-06-13
- * Changes: 
- * v6.4.0 - Converted to unified admin design system
- * v6.4.0 - FIXED: Event parameter issue in saveCourseAssignments
- * v6.4.0 - FIXED: All modal and JavaScript function calls
- * v6.4.0 - Added defensive programming for missing functions
+ * Inventijn Planning Dashboard - UNIFIED ADMIN EDITION v6.4.0
+ * Converts course interest to actual enrollments with cross-module integration
+ * Now using unified admin system components
+ * 
+ * @version 6.4.0
+ * @author Martijn Planken & Claude
+ * @date 2025-06-13
+ * @changelog v6.4.0 - Complete conversion to unified admin system
+ * @changelog v6.4.0 - Using admin_header.php, admin_footer.php, admin_styles.css
+ * @changelog v6.4.0 - Converted modals to admin_modals.php system
+ * @changelog v6.4.0 - Enhanced responsive design and accessibility
  */
 
+// Start session first
 session_start();
 
-// CRITICAL: Handle AJAX requests FIRST before any HTML output
-if (isset($_GET['ajax']) && isset($_GET['action'])) {
-    // Include config for database connection
-    if (!file_exists('../includes/config.php')) {
-        header('Content-Type: application/json');
-        echo json_encode(['error' => 'Config bestand niet gevonden']);
-        exit;
-    }
-    require_once '../includes/config.php';
+// Set page title for header
+$page_title = 'Planning Dashboard';
 
-    // Get database connection
-    try {
-        $pdo = getDatabase();
-    } catch (Exception $e) {
-        header('Content-Type: application/json');
-        echo json_encode(['error' => 'Database verbinding mislukt: ' . $e->getMessage()]);
-        exit;
-    }
-
-    // Set JSON header
-    header('Content-Type: application/json');
-    
-    try {
-        switch ($_GET['action']) {
-            case 'get_user':
-                if (isset($_GET['id']) && is_numeric($_GET['id'])) {
-                    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-                    $stmt->execute([$_GET['id']]);
-                    $user = $stmt->fetch(PDO::FETCH_ASSOC);
-                    
-                    if ($user) {
-                        echo json_encode($user);
-                    } else {
-                        echo json_encode(['error' => 'Gebruiker niet gevonden']);
-                    }
-                } else {
-                    echo json_encode(['error' => 'Invalid ID parameter']);
-                }
-                break;
-                
-            case 'get_user_courses':
-                if (isset($_GET['user_id']) && is_numeric($_GET['user_id'])) {
-                    $stmt = $pdo->prepare("
-                        SELECT cp.*, c.name as course_name, c.course_date, c.price
-                        FROM course_participants cp
-                        JOIN courses c ON cp.course_id = c.id
-                        WHERE cp.user_id = ? AND c.active = 1
-                        ORDER BY c.course_date ASC
-                    ");
-                    $stmt->execute([$_GET['user_id']]);
-                    $courses = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                    
-                    echo json_encode(['success' => true, 'courses' => $courses]);
-                } else {
-                    echo json_encode(['error' => 'Invalid user ID parameter']);
-                }
-                break;
-                
-            case 'regenerate_access_key':
-                if (isset($_GET['user_id']) && is_numeric($_GET['user_id'])) {
-                    $newAccessKey = bin2hex(random_bytes(16));
-                    $stmt = $pdo->prepare("UPDATE users SET access_key = ? WHERE id = ?");
-                    $success = $stmt->execute([$newAccessKey, $_GET['user_id']]);
-                    
-                    if ($success) {
-                        echo json_encode([
-                            'success' => true, 
-                            'message' => 'Nieuwe toegangscode gegenereerd!',
-                            'access_key' => $newAccessKey
-                        ]);
-                    } else {
-                        echo json_encode(['error' => 'Fout bij genereren nieuwe code']);
-                    }
-                } else {
-                    echo json_encode(['error' => 'Invalid user ID parameter']);
-                }
-                break;
-                
-            case 'test':
-                echo json_encode(['status' => 'success', 'message' => 'AJAX connection working!']);
-                break;
-                
-            default:
-                echo json_encode(['error' => 'Unknown action: ' . $_GET['action']]);
-        }
-    } catch (Exception $e) {
-        echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
-    }
-    exit; // CRITICAL: Exit immediately after AJAX response
-}
-
-// NOW include HTML header and continue with normal page rendering
-$page_title = 'Gebruikersbeheer';
+// Check admin authentication and include unified header
 require_once 'admin_header.php';
 
-// Include dependencies
-require_once '../includes/config.php';
-
-try {
-    $pdo = getDatabase();
-} catch (Exception $e) {
-    die('Database verbinding mislukt: ' . $e->getMessage());
-}
+// Include modal functions
+require_once 'admin_modals.php';
 
 $message = '';
 $error = '';
 
-// Handle POST form submissions (non-AJAX)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    try {
-        switch ($_POST['action']) {
-            case 'create_user':
-                // Generate unique access key
-                $accessKey = bin2hex(random_bytes(16));
-                
-                $stmt = $pdo->prepare("
-                    INSERT INTO users (email, name, access_key, phone, company, notes, active) 
-                    VALUES (?, ?, ?, ?, ?, ?, 1)
-                ");
-                $success = $stmt->execute([
-                    $_POST['email'],
-                    $_POST['name'], 
-                    $accessKey,
-                    $_POST['phone'] ?: null,
-                    $_POST['company'] ?: null,
-                    $_POST['notes'] ?: null
-                ]);
-                
-                if ($success) {
-                    $message = "Gebruiker aangemaakt! Toegangscode: " . $accessKey;
-                } else {
-                    $error = "Fout bij aanmaken gebruiker";
-                }
-                break;
-                
-            case 'update_user':
-                $stmt = $pdo->prepare("
-                    UPDATE users SET email=?, name=?, phone=?, company=?, notes=?, active=? 
-                    WHERE id=?
-                ");
-                $success = $stmt->execute([
-                    $_POST['email'],
-                    $_POST['name'],
-                    $_POST['phone'] ?: null,
-                    $_POST['company'] ?: null,
-                    $_POST['notes'] ?: null,
-                    isset($_POST['active']) ? 1 : 0,
-                    $_POST['user_id']
-                ]);
-                
-                $message = $success ? 'Gebruiker bijgewerkt!' : 'Fout bij bijwerken';
-                break;
-                
-            case 'delete_user':
-                $stmt = $pdo->prepare("UPDATE users SET active = 0 WHERE id = ?");
-                $success = $stmt->execute([$_POST['user_id']]);
-                $message = $success ? 'Gebruiker gedeactiveerd!' : 'Fout bij deactiveren';
-                break;
-                
-            case 'assign_courses':
-                // Parse the courses data
-                $courses = json_decode($_POST['courses'], true);
-                $userId = $_POST['user_id'];
-                
-                // First, remove all current assignments for this user
-                $stmt = $pdo->prepare("DELETE FROM course_participants WHERE user_id = ?");
-                $stmt->execute([$userId]);
-                
-                // Add new assignments
-                $insertStmt = $pdo->prepare("
-                    INSERT INTO course_participants (user_id, course_id, payment_status, notes) 
-                    VALUES (?, ?, ?, ?)
-                ");
-                
-                $successCount = 0;
-                foreach ($courses as $course) {
-                    $success = $insertStmt->execute([
-                        $userId,
-                        $course['course_id'],
-                        $course['payment_status'],
-                        $course['notes'] ?: null
-                    ]);
-                    if ($success) $successCount++;
-                }
-                
-                $message = "Cursustoekenningen bijgewerkt! ($successCount cursussen toegekend)";
-                break;
-                
-            case 'regenerate_access_key':
-                $newAccessKey = bin2hex(random_bytes(16));
-                $stmt = $pdo->prepare("UPDATE users SET access_key = ? WHERE id = ?");
-                $success = $stmt->execute([$newAccessKey, $_POST['user_id']]);
-                
-                $message = $success ? "Nieuwe toegangscode: $newAccessKey" : 'Fout bij genereren';
-                break;
+// Handle AJAX and form actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    
+    // Handle AJAX requests
+    if (isset($_POST['action']) && !empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+        header('Content-Type: application/json');
+        
+        try {
+            switch ($_POST['action']) {
+                case 'convert_to_enrollment':
+                    $interest_id = intval($_POST['interest_id']);
+                    $course_id = intval($_POST['course_id']);
+                    
+                    $result = convertInterestToEnrollmentEnhanced($pdo, $interest_id, $course_id);
+                    echo json_encode($result);
+                    break;
+                    
+                case 'create_course_from_interest':
+                    $interest_id = intval($_POST['interest_id']);
+                    $course_data = json_decode($_POST['course_data'], true);
+                    
+                    $result = createCourseFromInterest($pdo, $interest_id, $course_data);
+                    echo json_encode($result);
+                    break;
+                    
+                case 'update_priority':
+                    $interest_id = intval($_POST['interest_id']);
+                    $priority = $_POST['priority'];
+                    
+                    $stmt = $pdo->prepare("UPDATE course_interest SET priority = ?, updated_at = NOW() WHERE id = ?");
+                    if ($stmt->execute([$priority, $interest_id])) {
+                        echo json_encode(['success' => true, 'message' => 'Priority updated']);
+                    } else {
+                        echo json_encode(['success' => false, 'message' => 'Priority update failed']);
+                    }
+                    break;
+                    
+                case 'add_note':
+                    $interest_id = intval($_POST['interest_id']);
+                    $note = trim($_POST['note']);
+                    
+                    $stmt = $pdo->prepare("UPDATE course_interest SET admin_notes = ?, updated_at = NOW() WHERE id = ?");
+                    if ($stmt->execute([$note, $interest_id])) {
+                        echo json_encode(['success' => true, 'message' => 'Note added']);
+                    } else {
+                        echo json_encode(['success' => false, 'message' => 'Note update failed']);
+                    }
+                    break;
+                    
+                case 'get_user_details':
+                    $user_id = intval($_POST['user_id']);
+                    $result = getUserDetailsForPlanning($pdo, $user_id);
+                    echo json_encode($result);
+                    break;
+                    
+                default:
+                    echo json_encode(['success' => false, 'message' => 'Unknown action']);
+            }
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
         }
-    } catch (Exception $e) {
-        $error = 'Database fout: ' . $e->getMessage();
+        exit;
     }
     
-    // Redirect to prevent form resubmission
-    header('Location: ' . basename($_SERVER['PHP_SELF']));
-    exit;
+    // Handle regular form submissions
+    if (isset($_POST['bulk_action'])) {
+        try {
+            $selected_interests = $_POST['selected_interests'] ?? [];
+            $action = $_POST['bulk_action'];
+            
+            if (empty($selected_interests)) {
+                $error = "Selecteer minimaal één interesse record.";
+            } else {
+                switch ($action) {
+                    case 'set_high_priority':
+                        $placeholders = str_repeat('?,', count($selected_interests) - 1) . '?';
+                        $stmt = $pdo->prepare("UPDATE course_interest SET priority = 'high', updated_at = NOW() WHERE id IN ($placeholders)");
+                        $stmt->execute($selected_interests);
+                        $message = count($selected_interests) . " records set to high priority.";
+                        break;
+                        
+                    case 'mark_contacted':
+                        $placeholders = str_repeat('?,', count($selected_interests) - 1) . '?';
+                        $stmt = $pdo->prepare("UPDATE course_interest SET admin_notes = CONCAT(COALESCE(admin_notes, ''), '\n[" . date('Y-m-d') . "] Contacted'), updated_at = NOW() WHERE id IN ($placeholders)");
+                        $stmt->execute($selected_interests);
+                        $message = count($selected_interests) . " records marked as contacted.";
+                        break;
+                        
+                    case 'bulk_convert':
+                        $course_id = intval($_POST['bulk_course_id']);
+                        if ($course_id > 0) {
+                            $success_count = 0;
+                            foreach ($selected_interests as $interest_id) {
+                                $result = convertInterestToEnrollmentEnhanced($pdo, $interest_id, $course_id);
+                                if ($result['success']) $success_count++;
+                            }
+                            $message = "$success_count interests successfully converted to enrollments.";
+                        }
+                        break;
+                }
+            }
+        } catch (Exception $e) {
+            $error = "Bulk action failed: " . $e->getMessage();
+        }
+    }
 }
 
-// Get search and filter parameters
-$search = $_GET['search'] ?? '';
-$status = $_GET['status'] ?? 'all';
-$page = max(1, intval($_GET['page'] ?? 1));
-$limit = 20;
-$offset = ($page - 1) * $limit;
+// ==========================================
+// ENHANCED DATA RETRIEVAL WITH CROSS-MODULE INTEGRATION
+// ==========================================
 
-// Build WHERE clause
-$whereClause = "WHERE 1=1";
-$params = [];
+// Initialize with empty arrays
+$interestSummary = [];
+$recentInterest = [];
+$plannedCourses = [];
+$conversionStats = [];
 
-if ($search) {
-    $whereClause .= " AND (u.name LIKE ? OR u.email LIKE ? OR u.company LIKE ?)";
-    $searchTerm = "%$search%";
-    $params = array_merge($params, [$searchTerm, $searchTerm, $searchTerm]);
+try {
+    // Get interest summary by training type with enhanced metrics
+    $interestSummary = $pdo->query("
+        SELECT 
+            ci.training_type,
+            ci.training_name,
+            COUNT(*) as total_interest,
+            SUM(ci.participant_count) as total_participants_wanted,
+            COUNT(CASE WHEN ci.status = 'pending' THEN 1 END) as pending_interest,
+            COUNT(CASE WHEN ci.status = 'converted' THEN 1 END) as converted_interest,
+            COUNT(CASE WHEN ci.priority = 'high' THEN 1 END) as high_priority_count,
+            MIN(ci.created_at) as first_interest,
+            MAX(ci.created_at) as latest_interest,
+            AVG(ci.participant_count) as avg_participants_per_interest
+        FROM course_interest ci
+        GROUP BY ci.training_type, ci.training_name
+        ORDER BY pending_interest DESC, total_interest DESC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    
+} catch (Exception $e) {
+    $error .= "Interest summary error: " . $e->getMessage() . "\n";
 }
 
-if ($status === 'active') {
-    $whereClause .= " AND u.active = 1";
-} elseif ($status === 'inactive') {
-    $whereClause .= " AND u.active = 0";
+try {
+    // Get recent pending interests with enhanced user details
+    $recentInterest = $pdo->query("
+        SELECT 
+            ci.*,
+            u.name as user_name, 
+            u.email as user_email, 
+            u.company as user_company,
+            u.phone as user_phone,
+            u.created_at as user_since,
+            CASE 
+                WHEN u.name IS NULL THEN 'Guest Registration'
+                ELSE CONCAT(u.name, ' (', u.email, ')')
+            END as display_name,
+            (SELECT COUNT(*) FROM course_participants cp WHERE cp.user_id = u.id) as user_course_count,
+            (SELECT COUNT(*) FROM course_participants cp WHERE cp.user_id = u.id AND cp.payment_status = 'paid') as user_paid_courses
+        FROM course_interest ci
+        LEFT JOIN users u ON ci.user_id = u.id
+        WHERE ci.status = 'pending'
+        ORDER BY 
+            ci.priority DESC,
+            ci.created_at DESC
+        LIMIT 25
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    
+} catch (Exception $e) {
+    $error .= "Recent interest error: " . $e->getMessage() . "\n";
 }
 
-// Get users with course count
-$usersQuery = "
-    SELECT u.*, 
-           COUNT(cp.id) as course_count,
-           SUM(CASE WHEN cp.payment_status = 'paid' THEN 1 ELSE 0 END) as paid_courses,
-           GROUP_CONCAT(c.name SEPARATOR ', ') as course_names
-    FROM users u 
-    LEFT JOIN course_participants cp ON u.id = cp.user_id 
-    LEFT JOIN courses c ON cp.course_id = c.id AND c.active = 1
-    $whereClause
-    GROUP BY u.id 
-    ORDER BY u.created_at DESC 
-    LIMIT $limit OFFSET $offset
-";
+try {
+    // Get planned courses with enhanced capacity and participant info
+    $plannedCourses = $pdo->query("
+        SELECT 
+            c.*, 
+            COUNT(cp.id) as current_participants,
+            (c.max_participants - COUNT(cp.id)) as available_spots,
+            SUM(CASE WHEN cp.payment_status = 'paid' THEN 1 ELSE 0 END) as paid_participants,
+            SUM(CASE WHEN cp.payment_status = 'pending' THEN 1 ELSE 0 END) as pending_participants,
+            c.price * SUM(CASE WHEN cp.payment_status = 'paid' THEN 1 ELSE 0 END) as confirmed_revenue
+        FROM courses c
+        LEFT JOIN course_participants cp ON c.id = cp.course_id
+        WHERE c.active = 1 AND c.course_date > NOW()
+        GROUP BY c.id
+        ORDER BY c.course_date ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    
+} catch (Exception $e) {
+    $error .= "Courses error: " . $e->getMessage() . "\n";
+}
 
-$users = $pdo->prepare($usersQuery);
-$users->execute($params);
-$users = $users->fetchAll();
+try {
+    // Enhanced conversion statistics
+    $conversionStats = $pdo->query("
+        SELECT 
+            'Total Interest' as metric,
+            COUNT(*) as value,
+            'info' as type
+        FROM course_interest
+        UNION ALL
+        SELECT 
+            'Pending Conversion' as metric,
+            COUNT(*) as value,
+            'warning' as type
+        FROM course_interest 
+        WHERE status = 'pending'
+        UNION ALL
+        SELECT 
+            'Successfully Converted' as metric,
+            COUNT(*) as value,
+            'success' as type
+        FROM course_interest 
+        WHERE status = 'converted'
+        UNION ALL
+        SELECT 
+            'High Priority' as metric,
+            COUNT(*) as value,
+            'danger' as type
+        FROM course_interest 
+        WHERE priority = 'high' AND status = 'pending'
+        UNION ALL
+        SELECT 
+            'Ready for Certificates' as metric,
+            COUNT(*) as value,
+            'info' as type
+        FROM course_participants cp 
+        JOIN courses c ON cp.course_id = c.id 
+        WHERE cp.payment_status = 'paid' 
+        AND c.course_date < NOW() 
+        AND NOT EXISTS (SELECT 1 FROM certificates WHERE course_participant_id = cp.id)
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    
+} catch (Exception $e) {
+    $error .= "Stats error: " . $e->getMessage() . "\n";
+}
 
-// Get total count for pagination
-$totalQuery = "SELECT COUNT(DISTINCT u.id) FROM users u $whereClause";
-$totalStmt = $pdo->prepare($totalQuery);
-$totalStmt->execute($params);
-$totalUsers = $totalStmt->fetchColumn();
-$totalPages = ceil($totalUsers / $limit);
+// Calculate totals for dashboard
+$stats = [];
+foreach ($conversionStats as $stat) {
+    $stats[$stat['metric']] = [
+        'value' => $stat['value'],
+        'type' => $stat['type']
+    ];
+}
 
-// Get all courses for assignment dropdown
-$allCourses = $pdo->query("
-    SELECT id, name, course_date, price, max_participants,
-           (SELECT COUNT(*) FROM course_participants WHERE course_id = courses.id) as current_participants
-    FROM courses 
-    WHERE active = 1 
-    ORDER BY course_date ASC
-")->fetchAll();
+// ==========================================
+// ENHANCED HELPER FUNCTIONS
+// ==========================================
 
-// Get statistics
-$stats = [
-    'total_users' => $totalUsers,
-    'active_users' => count(array_filter($users, fn($u) => $u['active'])),
-    'avg_courses' => $totalUsers > 0 ? round(array_sum(array_column($users, 'course_count')) / $totalUsers, 1) : 0,
-    'paid_enrollments' => array_sum(array_column($users, 'paid_courses'))
-];
+/**
+ * Enhanced conversion function with full integration
+ */
+function convertInterestToEnrollmentEnhanced($pdo, $interest_id, $course_id) {
+    try {
+        $pdo->beginTransaction();
+        
+        // Get interest data
+        $stmt = $pdo->prepare("SELECT * FROM course_interest WHERE id = ?");
+        $stmt->execute([$interest_id]);
+        $interest = $stmt->fetch();
+        
+        if (!$interest) {
+            throw new Exception("Interest record not found");
+        }
+        
+        // Check course capacity
+        $stmt = $pdo->prepare("
+            SELECT c.*, COUNT(cp.id) as current_participants 
+            FROM courses c 
+            LEFT JOIN course_participants cp ON c.id = cp.course_id 
+            WHERE c.id = ? 
+            GROUP BY c.id
+        ");
+        $stmt->execute([$course_id]);
+        $course = $stmt->fetch();
+        
+        if (!$course) {
+            throw new Exception("Course not found");
+        }
+        
+        if ($course['current_participants'] >= $course['max_participants']) {
+            throw new Exception("Course is full");
+        }
+        
+        // Create enrollment record
+        $stmt = $pdo->prepare("
+            INSERT INTO course_participants (user_id, course_id, payment_status, enrollment_date, notes)
+            VALUES (?, ?, 'pending', NOW(), ?)
+        ");
+        $notes = "Converted from interest #$interest_id - " . ($interest['availability_comment'] ?: 'No additional notes');
+        $stmt->execute([$interest['user_id'], $course_id, $notes]);
+        
+        $participant_id = $pdo->lastInsertId();
+        
+        // Update interest status
+        $stmt = $pdo->prepare("
+            UPDATE course_interest 
+            SET status = 'converted', converted_to_course_id = ?, converted_at = NOW(), updated_at = NOW()
+            WHERE id = ?
+        ");
+        $stmt->execute([$course_id, $interest_id]);
+        
+        // Log the conversion
+        if (isset($_SESSION['admin_user'])) {
+            $stmt = $pdo->prepare("
+                INSERT INTO access_log (user_id, action, resource, ip_address, success, details, timestamp)
+                VALUES (?, 'interest_conversion', 'planning.php', ?, 1, ?, NOW())
+            ");
+            $details = json_encode([
+                'interest_id' => $interest_id,
+                'course_id' => $course_id,
+                'participant_id' => $participant_id,
+                'admin_user' => $_SESSION['admin_user']
+            ]);
+            $stmt->execute([$interest['user_id'], $_SERVER['REMOTE_ADDR'] ?? 'unknown', $details]);
+        }
+        
+        $pdo->commit();
+        
+        return [
+            'success' => true,
+            'message' => 'Interest successfully converted to enrollment',
+            'participant_id' => $participant_id,
+            'course_name' => $course['name'],
+            'redirect_url' => "courses.php?course_id=$course_id"
+        ];
+        
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        return [
+            'success' => false,
+            'message' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Create new course from interest pattern
+ */
+function createCourseFromInterest($pdo, $interest_id, $course_data) {
+    try {
+        // Implementation for creating course based on interest pattern
+        // This would analyze the interest and create a suitable course
+        return ['success' => true, 'message' => 'Feature coming soon'];
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => $e->getMessage()];
+    }
+}
+
+/**
+ * Get detailed user information for planning context
+ */
+function getUserDetailsForPlanning($pdo, $user_id) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT u.*, 
+                   COUNT(cp.id) as total_courses,
+                   COUNT(CASE WHEN cp.payment_status = 'paid' THEN 1 END) as paid_courses,
+                   COUNT(ci.id) as total_interests,
+                   MAX(cp.enrollment_date) as last_enrollment
+            FROM users u
+            LEFT JOIN course_participants cp ON u.id = cp.user_id
+            LEFT JOIN course_interest ci ON u.id = ci.user_id
+            WHERE u.id = ?
+            GROUP BY u.id
+        ");
+        $stmt->execute([$user_id]);
+        $user = $stmt->fetch();
+        
+        if ($user) {
+            return ['success' => true, 'user' => $user];
+        } else {
+            return ['success' => false, 'message' => 'User not found'];
+        }
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => $e->getMessage()];
+    }
+}
+
 ?>
 
 <!-- Page Header Card -->
 <div class="card">
     <div class="card-header">
         <div>
-            <h3><i class="fas fa-users"></i> Gebruikersbeheer</h3>
+            <h3><i class="fas fa-calendar-alt"></i> Planning Dashboard</h3>
+            <span class="version-badge">v6.4.0 - Unified Edition</span>
         </div>
         <div style="display: flex; gap: var(--space-2);">
-            <button onclick="openUserModal()" class="btn btn-primary">
-                <i class="fas fa-plus"></i> Nieuwe Gebruiker
+            <button onclick="refreshData()" class="btn btn-primary">
+                <i class="fas fa-sync-alt"></i> Refresh
             </button>
-            <button class="btn btn-secondary" onclick="showBulkImportModal()">
-                <i class="fas fa-upload"></i> Bulk Import
-            </button>
+            <a href="courses.php" class="btn btn-success">
+                <i class="fas fa-plus"></i> New Course
+            </a>
         </div>
     </div>
     <div class="course-essentials">
+        <?php foreach ($conversionStats as $stat): ?>
         <div class="essential-item">
-            <div class="essential-label"><i class="fas fa-users"></i> Totaal Gebruikers</div>
-            <div class="essential-value"><?= number_format($stats['total_users']) ?></div>
+            <div class="essential-label">
+                <?php
+                $icons = [
+                    'Total Interest' => 'fas fa-heart',
+                    'Pending Conversion' => 'fas fa-clock',
+                    'Successfully Converted' => 'fas fa-check-circle',
+                    'High Priority' => 'fas fa-flag',
+                    'Ready for Certificates' => 'fas fa-certificate'
+                ];
+                $icon = $icons[$stat['metric']] ?? 'fas fa-info-circle';
+                ?>
+                <i class="<?= $icon ?>"></i> <?= $stat['metric'] ?>
+            </div>
+            <div class="essential-value" style="color: var(--<?= $stat['type'] === 'danger' ? 'error' : ($stat['type'] === 'warning' ? 'warning' : ($stat['type'] === 'success' ? 'success' : 'primary')) ?>);">
+                <?= $stat['value'] ?>
+            </div>
+            <?php if ($stat['metric'] === 'Ready for Certificates' && $stat['value'] > 0): ?>
+                <a href="certificates.php?ready=1" style="font-size: 0.75rem; color: var(--primary); text-decoration: none;">
+                    → Generate Certificates
+                </a>
+            <?php elseif ($stat['metric'] === 'High Priority' && $stat['value'] > 0): ?>
+                <div style="font-size: 0.75rem; color: var(--error);">Needs attention</div>
+            <?php elseif ($stat['metric'] === 'Successfully Converted'): ?>
+                <a href="courses.php" style="font-size: 0.75rem; color: var(--primary); text-decoration: none;">
+                    → View Courses
+                </a>
+            <?php endif; ?>
         </div>
-        <div class="essential-item">
-            <div class="essential-label"><i class="fas fa-check-circle"></i> Actieve Gebruikers</div>
-            <div class="essential-value"><?= number_format($stats['active_users']) ?></div>
-        </div>
-        <div class="essential-item">
-            <div class="essential-label"><i class="fas fa-book"></i> Gem. Cursussen/User</div>
-            <div class="essential-value"><?= $stats['avg_courses'] ?></div>
-        </div>
-        <div class="essential-item">
-            <div class="essential-label"><i class="fas fa-euro-sign"></i> Betaalde Inschrijvingen</div>
-            <div class="essential-value"><?= number_format($stats['paid_enrollments']) ?></div>
-        </div>
+        <?php endforeach; ?>
     </div>
 </div>
 
 <!-- Messages -->
 <?php if ($message): ?>
-    <div class="message success">
-        <i class="fas fa-check-circle"></i> <?= htmlspecialchars($message) ?>
-    </div>
+<div class="message success">
+    <i class="fas fa-check-circle"></i> <?= htmlspecialchars($message) ?>
+</div>
 <?php endif; ?>
 
 <?php if ($error): ?>
-    <div class="message error">
-        <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?>
-    </div>
+<div class="message error">
+    <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?>
+</div>
 <?php endif; ?>
 
-<!-- Search and Filter Toolbar -->
-<div class="card" style="margin-bottom: var(--space-6);">
-    <div style="display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap;">
-        <div style="flex: 1; min-width: 250px;">
-            <input type="text" 
-                   placeholder="🔍 Zoek op naam, email of bedrijf..." 
-                   value="<?= htmlspecialchars($search) ?>"
-                   onkeyup="if(event.key==='Enter') applyFilters()"
-                   style="width: 100%; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm);">
-        </div>
-        
-        <select onchange="applyFilters()" style="padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm);">
-            <option value="all" <?= $status === 'all' ? 'selected' : '' ?>>Alle gebruikers</option>
-            <option value="active" <?= $status === 'active' ? 'selected' : '' ?>>Actieve gebruikers</option>
-            <option value="inactive" <?= $status === 'inactive' ? 'selected' : '' ?>>Inactieve gebruikers</option>
-        </select>
+<!-- Tab Navigation -->
+<div class="tab-navigation">
+    <div class="tab-links">
+        <a href="#interests" class="tab-button active">
+            <i class="fas fa-heart"></i> Active Interests (<?= count($recentInterest) ?>)
+        </a>
+        <a href="#summary" class="tab-button">
+            <i class="fas fa-chart-pie"></i> Training Summary
+        </a>
+        <a href="#courses" class="tab-button">
+            <i class="fas fa-book"></i> Planned Courses (<?= count($plannedCourses) ?>)
+        </a>
+    </div>
+    <div class="action-buttons">
+        <a href="../formulier-ai2.php" class="btn btn-secondary btn-sm">
+            <i class="fas fa-edit"></i> Test Form
+        </a>
+        <a href="users.php" class="btn btn-outline btn-sm">
+            <i class="fas fa-users"></i> Users
+        </a>
+        <a href="certificates.php" class="btn btn-outline btn-sm">
+            <i class="fas fa-certificate"></i> Certificates
+        </a>
     </div>
 </div>
 
-<!-- Users Table -->
+
+
+
+
+<!-- Main Interest Management -->
 <div class="card">
-    <?php if (empty($users)): ?>
+    <div class="card-header">
+        <h3><i class="fas fa-heart"></i> Interest Management</h3>
+        <div>
+            <span class="nav-badge"><?= count($recentInterest) ?> pending</span>
+        </div>
+    </div>
+    
+    <?php if (empty($recentInterest)): ?>
         <div class="empty-state">
-            <i class="fas fa-users"></i>
-            <p>Geen gebruikers gevonden met de huidige filters.</p>
-            <button class="btn btn-primary" onclick="openUserModal()">
-                <i class="fas fa-plus"></i> Eerste Gebruiker
-            </button>
+            <i class="fas fa-inbox"></i>
+            <p><strong>Geen openstaande interesse</strong></p>
+            <p>Alle interesse is geconverteerd of er zijn nog geen nieuwe aanmeldingen.</p>
         </div>
     <?php else: ?>
-        <table style="width: 100%; border-collapse: collapse;">
-            <thead>
-                <tr style="background: var(--surface-hover); border-bottom: 2px solid var(--border);">
-                    <th style="padding: var(--space-4); text-align: left; font-weight: 600; color: var(--text-secondary);">Gebruiker</th>
-                    <th style="padding: var(--space-4); text-align: left; font-weight: 600; color: var(--text-secondary);">Contact</th>
-                    <th style="padding: var(--space-4); text-align: left; font-weight: 600; color: var(--text-secondary);">Cursussen</th>
-                    <th style="padding: var(--space-4); text-align: left; font-weight: 600; color: var(--text-secondary);">Status</th>
-                    <th style="padding: var(--space-4); text-align: left; font-weight: 600; color: var(--text-secondary);">Aangemaakt</th>
-                    <th style="padding: var(--space-4); text-align: left; font-weight: 600; color: var(--text-secondary);">Acties</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($users as $user): ?>
-                <tr style="border-bottom: 1px solid var(--border); transition: background 0.2s;"
-                    onmouseover="this.style.background='var(--surface-hover)'"
-                    onmouseout="this.style.background=''">
-                    <td style="padding: var(--space-4);">
-                        <div style="font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-1);">
-                            <?= htmlspecialchars($user['name']) ?>
-                        </div>
-                        <div style="color: var(--text-secondary); font-size: var(--font-size-sm);">
-                            <?= htmlspecialchars($user['email']) ?>
-                        </div>
-                        <?php if ($user['company']): ?>
-                            <div style="color: var(--text-tertiary); font-size: var(--font-size-xs); font-style: italic;">
-                                <?= htmlspecialchars($user['company']) ?>
-                            </div>
-                        <?php endif; ?>
-                    </td>
-                    <td style="padding: var(--space-4);">
-                        <?php if ($user['phone']): ?>
-                            <div style="margin-bottom: var(--space-1);">
-                                <i class="fas fa-phone" style="width: 16px;"></i> <?= htmlspecialchars($user['phone']) ?>
-                            </div>
-                        <?php endif; ?>
-                        <div style="font-size: var(--font-size-xs); color: var(--text-tertiary); font-family: monospace;">
-                            <i class="fas fa-key" style="width: 16px;"></i> <?= substr($user['access_key'], 0, 8) ?>...
-                        </div>
-                    </td>
-                    <td style="padding: var(--space-4);">
-                        <?php if ($user['course_count'] > 0): ?>
-                            <div style="margin-bottom: var(--space-2);">
-                                <span style="background: var(--border-light); color: var(--text-primary); padding: var(--space-1) var(--space-2); border-radius: 12px; font-size: var(--font-size-xs); margin-right: var(--space-1);">
-                                    <i class="fas fa-book"></i> <?= $user['course_count'] ?> cursussen
+    
+    <!-- Enhanced Bulk Actions -->
+    <form method="post" id="bulkActionsForm">
+        <div class="card" style="background: var(--surface-hover); margin: 1rem; border: 1px solid var(--border);">
+            <div style="padding: 1rem;">
+                <strong><i class="fas fa-tasks"></i> Bulk Actions:</strong>
+                <div class="btn-group" style="margin-top: 0.5rem;">
+                    <select name="bulk_action" class="form-control" style="display: inline-block; width: auto; margin-right: 0.5rem;">
+                        <option value="">Choose action...</option>
+                        <option value="set_high_priority">🔥 Set High Priority</option>
+                        <option value="mark_contacted">📞 Mark as Contacted</option>
+                        <option value="bulk_convert">🎯 Convert to Course</option>
+                    </select>
+                    
+                    <select name="bulk_course_id" style="display: none;" id="bulk-course-select">
+                        <option value="">Select course...</option>
+                        <?php foreach ($plannedCourses as $course): ?>
+                            <option value="<?= $course['id'] ?>">
+                                <?= htmlspecialchars($course['name']) ?> (<?= $course['available_spots'] ?> spots)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="fas fa-check"></i> Apply to Selected
+                    </button>
+                    
+                    <label style="margin-left: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="checkbox" id="select-all"> Select All
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Interest Records with Enhanced Information -->
+        <div style="padding: 0 1rem 1rem;">
+            <?php foreach ($recentInterest as $interest): ?>
+            <div class="interest-item course-item <?= $interest['priority'] === 'high' ? 'high-priority' : '' ?>" style="position: relative;">
+                
+                <?php if ($interest['priority'] === 'high'): ?>
+                <div style="position: absolute; top: 1rem; right: 1rem; background: var(--error); color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
+                    🔥 HIGH
+                </div>
+                <?php endif; ?>
+                
+                <div class="course-header" style="grid-template-columns: auto 1fr auto; gap: 1rem; align-items: start;">
+                    <input type="checkbox" name="selected_interests[]" value="<?= $interest['id'] ?>" class="interest-checkbox">
+                    
+                    <div style="min-width: 0;">
+                        <div class="course-title">
+                            <?= htmlspecialchars($interest['display_name']) ?>
+                            <?php if ($interest['user_course_count'] > 0): ?>
+                                <span class="user-badge" style="background: var(--success); color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; margin-left: 0.5rem;">
+                                    🎓 <?= $interest['user_course_count'] ?> courses
                                 </span>
-                                <?php if ($user['paid_courses'] > 0): ?>
-                                    <span style="background: #d1fae5; color: #065f46; padding: var(--space-1) var(--space-2); border-radius: 12px; font-size: var(--font-size-xs);">
-                                        <i class="fas fa-euro-sign"></i> <?= $user['paid_courses'] ?> betaald
-                                    </span>
-                                <?php endif; ?>
-                            </div>
-                            <?php if ($user['course_names']): ?>
-                                <div style="font-size: var(--font-size-xs); color: var(--text-secondary);">
-                                    <?= htmlspecialchars(strlen($user['course_names']) > 50 ? substr($user['course_names'], 0, 50) . '...' : $user['course_names']) ?>
-                                </div>
                             <?php endif; ?>
-                        <?php else: ?>
-                            <span style="color: var(--text-tertiary); font-style: italic;">Geen cursussen</span>
-                        <?php endif; ?>
-                    </td>
-                    <td style="padding: var(--space-4);">
-                        <span style="padding: var(--space-1) var(--space-3); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600; 
-                                     background: <?= $user['active'] ? '#d1fae5' : '#fee2e2' ?>; 
-                                     color: <?= $user['active'] ? '#065f46' : '#991b1b' ?>;">
-                            <?= $user['active'] ? '✅ Actief' : '❌ Inactief' ?>
-                        </span>
-                    </td>
-                    <td style="padding: var(--space-4); color: var(--text-secondary); font-size: var(--font-size-sm);">
-                        <?= date('d-m-Y', strtotime($user['created_at'])) ?>
-                    </td>
-                    <td style="padding: var(--space-4);">
-                        <div class="btn-group">
-                            <button onclick="editUser(<?= $user['id'] ?>)" class="btn btn-sm btn-primary" title="Bewerken">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button onclick="assignCourses(<?= $user['id'] ?>)" class="btn btn-sm btn-secondary" title="Cursussen">
-                                <i class="fas fa-book"></i>
-                            </button>
-                            <button onclick="safeConfirmDelete('<?= htmlspecialchars($user['name']) ?>', () => deleteUser(<?= $user['id'] ?>))" 
-                                    class="btn btn-sm btn-danger" title="Deactiveren">
-                                <i class="fas fa-trash"></i>
-                            </button>
+                            <?php if ($interest['user_paid_courses'] > 0): ?>
+                                <span class="user-badge" style="background: var(--warning); color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; margin-left: 0.5rem;">
+                                    💰 <?= $interest['user_paid_courses'] ?> paid
+                                </span>
+                            <?php endif; ?>
                         </div>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+                        
+                        <div style="background: var(--primary); color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; display: inline-block; margin-bottom: 0.5rem;">
+                            <?= htmlspecialchars($interest['training_name']) ?>
+                        </div>
+                        
+                        <div class="course-subtitle">
+                            📧 <?= htmlspecialchars($interest['user_email'] ?: 'No email') ?> |
+                            🏢 <?= htmlspecialchars($interest['company'] ?: 'No company') ?> |
+                            👥 <?= $interest['participant_count'] ?> participant(s) |
+                            📅 <?= date('d-m-Y H:i', strtotime($interest['created_at'])) ?>
+                            <?php if ($interest['user_since']): ?>
+                                | 👤 User since <?= date('M Y', strtotime($interest['user_since'])) ?>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <?php if ($interest['availability_comment']): ?>
+                        <div style="background: var(--surface-hover); padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; font-size: 0.875rem; border-left: 3px solid var(--neutral);">
+                            💬 <?= htmlspecialchars($interest['availability_comment']) ?>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <?php if ($interest['admin_notes']): ?>
+                        <div style="background: #fef3c7; padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; font-size: 0.875rem; border-left: 3px solid var(--warning);">
+                            📝 <?= htmlspecialchars($interest['admin_notes']) ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    
+                    <div class="btn-group" style="flex-direction: column; margin: 0;">
+                        <button type="button" onclick="toggleConversion(<?= $interest['id'] ?>)" class="btn btn-success btn-sm">
+                            <i class="fas fa-exchange-alt"></i> Convert
+                        </button>
+                        <?php if ($interest['user_id']): ?>
+                            <a href="users.php?user_id=<?= $interest['user_id'] ?>" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-user"></i> User
+                            </a>
+                        <?php endif; ?>
+                        <button type="button" onclick="setPriority(<?= $interest['id'] ?>, 'high')" class="btn btn-warning btn-sm">
+                            <i class="fas fa-flag"></i> Priority
+                        </button>
+                        <button type="button" onclick="addNote(<?= $interest['id'] ?>)" class="btn btn-outline btn-sm">
+                            <i class="fas fa-sticky-note"></i> Note
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Enhanced Conversion Section -->
+                <div id="conversion-<?= $interest['id'] ?>" class="conversion-section" style="display: none; background: #f0f9ff; border: 1px solid var(--primary); border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+                    <h4 style="color: var(--primary); margin-bottom: 1rem;">
+                        <i class="fas fa-exchange-alt"></i> Convert to Course Enrollment
+                    </h4>
+                    <p style="margin-bottom: 1rem; color: var(--text-secondary);">Select a course to enroll this participant:</p>
+                    
+                    <div style="display: grid; gap: 0.5rem;">
+                        <?php foreach ($plannedCourses as $course): ?>
+                        <div class="course-option" onclick="selectCourse(<?= $interest['id'] ?>, <?= $course['id'] ?>)" data-course-id="<?= $course['id'] ?>" 
+                             style="background: white; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; cursor: pointer; transition: all 0.2s;">
+                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: center;">
+                                <div>
+                                    <strong style="color: var(--text-primary);"><?= htmlspecialchars($course['name']) ?></strong><br>
+                                    <small style="color: var(--text-secondary);">
+                                        📅 <?= date('d-m-Y H:i', strtotime($course['course_date'])) ?> |
+                                        📍 <?= htmlspecialchars($course['location'] ?: 'Location TBD') ?>
+                                    </small>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 0.875rem; color: var(--text-secondary);">
+                                        👥 <?= $course['current_participants'] ?>/<?= $course['max_participants'] ?>
+                                    </div>
+                                    <div style="font-weight: 600; color: var(--text-primary);">
+                                        €<?= number_format($course['price'], 2) ?>
+                                    </div>
+                                    <?php if ($course['available_spots'] <= 0): ?>
+                                        <div style="color: var(--error); font-weight: bold; font-size: 0.75rem;">FULL</div>
+                                    <?php elseif ($course['available_spots'] <= 3): ?>
+                                        <div style="color: var(--warning); font-weight: bold; font-size: 0.75rem;"><?= $course['available_spots'] ?> spots left</div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    
+                    <div class="btn-group" style="margin-top: 1rem;">
+                        <button type="button" onclick="executeConversion(<?= $interest['id'] ?>)" class="btn btn-success" id="convert-btn-<?= $interest['id'] ?>" disabled>
+                            <i class="fas fa-check"></i> Confirm Conversion
+                        </button>
+                        <button type="button" onclick="toggleConversion(<?= $interest['id'] ?>)" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </form>
     <?php endif; ?>
 </div>
 
-<!-- Pagination -->
-<?php if ($totalPages > 1): ?>
-<div style="display: flex; justify-content: center; align-items: center; gap: var(--space-2); margin-top: var(--space-6);">
-    <?php if ($page > 1): ?>
-        <a href="?page=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&status=<?= $status ?>" 
-           class="btn btn-outline">‹ Vorige</a>
-    <?php endif; ?>
-    
-    <?php for ($i = max(1, $page - 2); $i <= min($totalPages, $page + 2); $i++): ?>
-        <?php if ($i == $page): ?>
-            <span class="btn btn-primary"><?= $i ?></span>
-        <?php else: ?>
-            <a href="?page=<?= $i ?>&search=<?= urlencode($search) ?>&status=<?= $status ?>" 
-               class="btn btn-outline"><?= $i ?></a>
-        <?php endif; ?>
-    <?php endfor; ?>
-    
-    <?php if ($page < $totalPages): ?>
-        <a href="?page=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&status=<?= $status ?>" 
-           class="btn btn-outline">Volgende ›</a>
-    <?php endif; ?>
+<!-- Enhanced Interest Summary with Cross-Module Links -->
+<?php if (!empty($interestSummary)): ?>
+<div class="card">
+    <div class="card-header">
+        <h3><i class="fas fa-chart-pie"></i> Interest by Training Type</h3>
+        <a href="courses.php" class="btn btn-primary btn-sm">
+            <i class="fas fa-plus"></i> Create Matching Course
+        </a>
+    </div>
+    <div style="padding: 1rem; display: grid; gap: 1rem;">
+        <?php foreach ($interestSummary as $summary): ?>
+        <div class="course-item">
+            <div class="course-header">
+                <div>
+                    <div class="course-title">
+                        <?= htmlspecialchars($summary['training_name']) ?>
+                        <span style="font-size: 0.75rem; background: var(--primary); color: white; padding: 0.25rem 0.5rem; border-radius: 12px; margin-left: 0.5rem;">
+                            <?= htmlspecialchars($summary['training_type']) ?>
+                        </span>
+                    </div>
+                    <div class="course-subtitle">
+                        ⏳ <strong><?= $summary['pending_interest'] ?></strong> pending |
+                        ✅ <strong><?= $summary['converted_interest'] ?></strong> converted |
+                        👥 <strong><?= $summary['total_participants_wanted'] ?></strong> participants wanted |
+                        🔥 <strong><?= $summary['high_priority_count'] ?></strong> high priority
+                    </div>
+                </div>
+                <?php if ($summary['pending_interest'] > 0): ?>
+                <a href="courses.php?template=<?= urlencode($summary['training_type']) ?>" class="btn btn-primary btn-sm">
+                    <i class="fas fa-plus"></i> Create Course
+                </a>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
 </div>
 <?php endif; ?>
 
-<!-- User Modal -->
-<div id="userModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3 id="userModalTitle">Nieuwe Gebruiker</h3>
-            <button class="modal-close" onclick="safeCloseModal('userModal')">&times;</button>
-        </div>
-        <div class="modal-body">
-            <form method="POST" id="userForm">
-                <input type="hidden" name="action" value="create_user" id="userAction">
-                <input type="hidden" name="user_id" id="userId">
-                
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="name">Volledige Naam *</label>
-                        <input type="text" id="name" name="name" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="email">E-mailadres *</label>
-                        <input type="email" id="email" name="email" required>
-                    </div>
-                </div>
-                
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="phone">Telefoonnummer</label>
-                        <input type="tel" id="phone" name="phone">
-                    </div>
-                    <div class="form-group">
-                        <label for="company">Bedrijf</label>
-                        <input type="text" id="company" name="company">
-                    </div>
-                </div>
-                
-                <div class="form-group full-width">
-                    <label for="notes">Notities</label>
-                    <textarea id="notes" name="notes" rows="3" placeholder="Eventuele opmerkingen..."></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="active" name="active" value="1" checked>
-                        Gebruiker is actief
-                    </label>
-                </div>
-                
-                <!-- Access Key Management (only visible when editing) -->
-                <div id="accessKeySection" style="display: none; background: var(--surface-hover); padding: var(--space-4); border-radius: var(--radius-sm); margin: var(--space-4) 0; border: 1px solid var(--border);">
-                    <div style="font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: var(--space-2); font-weight: 600;">
-                        <i class="fas fa-key"></i> Toegangscode Beheer
-                    </div>
-                    <div style="font-family: monospace; font-size: var(--font-size-sm); color: var(--text-primary); margin-bottom: var(--space-3); padding: var(--space-2); background: var(--surface); border-radius: var(--radius-sm); border: 1px solid var(--border);" id="current_access_key">
-                        <!-- Filled by JavaScript -->
-                    </div>
-                    <button type="button" class="btn btn-sm btn-warning" onclick="regenerateAccessKey()" style="margin-top: var(--space-2);">
-                        <i class="fas fa-sync-alt"></i> Nieuwe Code Genereren
-                    </button>
-                    <div style="font-size: var(--font-size-xs); color: var(--text-tertiary); margin-top: var(--space-2);">
-                        ⚠️ Let op: De oude toegangscode werkt dan niet meer
-                    </div>
-                </div>
-                
-                <div class="btn-group">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save"></i>
-                        <span id="userModalSubmitText">Gebruiker Aanmaken</span>
-                    </button>
-                    <button type="button" onclick="safeCloseModal('userModal')" class="btn btn-secondary">
-                        <i class="fas fa-times"></i> Annuleren
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+<!-- Conversion Modal -->
+<?= renderInfoModal('conversionDetailsModal', 'Conversion Details', '<div id="conversionDetailsContent">Loading...</div>') ?>
 
-<!-- Course Assignment Modal -->
-<div id="courseAssignmentModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3><i class="fas fa-book"></i> Cursussen Toekennen</h3>
-            <button class="modal-close" onclick="safeCloseModal('courseAssignmentModal')">&times;</button>
-        </div>
-        <div class="modal-body">
-            <div id="user_course_info" style="background: var(--surface-hover); padding: var(--space-4); border-radius: var(--radius-sm); margin-bottom: var(--space-4);">
-                <!-- Filled by JavaScript -->
-            </div>
-            
-            <div id="course_assignments">
-                <!-- Course assignments will be added here by JavaScript -->
-            </div>
-            
-            <div style="margin: var(--space-4) 0; padding-top: var(--space-4); border-top: 1px solid var(--border);">
-                <button type="button" class="btn btn-secondary" onclick="addCourseAssignment()">
-                    <i class="fas fa-plus"></i> Cursus Toevoegen
-                </button>
-            </div>
-            
-            <div class="btn-group">
-                <button type="button" class="btn btn-primary" onclick="saveCourseAssignments(event)">
-                    <i class="fas fa-save"></i> Cursussen Opslaan
-                </button>
-                <button type="button" class="btn btn-secondary" onclick="safeCloseModal('courseAssignmentModal')">
-                    <i class="fas fa-times"></i> Annuleren
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- User Details Modal -->
+<?= renderInfoModal('userDetailsModal', 'User Details', '<div id="userDetailsContent">Loading...</div>') ?>
 
 <script>
-// Global variables
-let currentEditUserId = null;
-let currentAssignUserId = null;
-let courseAssignmentCounter = 0;
+// Enhanced JavaScript with unified admin system integration
+let selectedCourseId = null;
+let currentInterestId = null;
 
-// All data (for JavaScript operations)
-const usersData = <?= json_encode($users) ?>;
-const allCoursesData = <?= json_encode($allCourses) ?>;
-
-// Safe loading modal functions
-function safeOpenLoadingModal() {
-    if (typeof openLoadingModal !== 'undefined') {
-        openLoadingModal();
-    } else {
-        console.log('ℹ️ Loading modal not available, continuing...');
-    }
-}
-
-function safeCloseLoadingModal() {
-    if (typeof closeLoadingModal !== 'undefined') {
-        closeLoadingModal();
-    } else {
-        console.log('ℹ️ Loading modal not available, continuing...');
-    }
-}
-
-// Safe modal functions
-function safeOpenModal(modalId) {
-    if (typeof openModal !== 'undefined') {
-        openModal(modalId);
-    } else {
-        // Fallback: show modal manually
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.style.display = 'flex';
-            modal.style.alignItems = 'center';
-            modal.style.justifyContent = 'center';
-            modal.classList.add('active');
-            document.body.style.overflow = 'hidden';
-        }
-    }
-}
-
-function safeCloseModal(modalId) {
-    if (typeof closeModal !== 'undefined') {
-        closeModal(modalId);
-    } else {
-        // Fallback: hide modal manually
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.style.display = 'none';
-            modal.classList.remove('active');
-            document.body.style.overflow = '';
-        }
-    }
-}
-
-// Safe notification function
-function safeShowNotification(message, type = 'info') {
-    if (typeof showNotification !== 'undefined') {
-        showNotification(message, type);
-    } else {
-        // Fallback to alert
-        const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
-        alert((icons[type] || 'ℹ️') + ' ' + message);
-    }
-}
-
-// Debug function to check if all required functions exist
-function checkRequiredFunctions() {
-    const requiredFunctions = [
-        'openModal', 'closeModal', 'showNotification', 'fetchData',
-        'setButtonLoading', 'fillFormFromData', 'resetForm', 'confirmDelete'
-    ];
-    
-    const missing = requiredFunctions.filter(fn => typeof window[fn] === 'undefined');
-    
-    if (missing.length > 0) {
-        console.error('❌ Missing functions:', missing);
-        console.log('💡 This usually means admin_footer.php is not loaded correctly');
-        return false;
-    } else {
-        console.log('✅ All required functions are available');
-        return true;
-    }
-}
-
-// AJAX testing function
-function testAjax() {
-    if (typeof fetchData !== 'undefined') {
-        fetchData('?ajax=1&action=test')
-            .then(result => {
-                console.log('✅ AJAX Test Result:', result);
-                safeShowNotification('AJAX verbinding werkt!', 'success');
-            })
-            .catch(error => {
-                console.error('❌ AJAX Test Failed:', error);
-                safeShowNotification('AJAX fout: ' + error.message, 'error');
-            });
-    } else {
-        console.error('❌ fetchData function not available');
-        alert('❌ AJAX functions not loaded');
-    }
-}
-
-// Safe modal opener
-function openUserModal() {
-    resetUserForm();
-    safeOpenModal('userModal');
-}
-
-// Reset user form function  
-function resetUserForm() {
-    if (typeof resetForm !== 'undefined') {
-        resetForm('userForm');
-    } else {
-        // Manual reset
-        const form = document.getElementById('userForm');
-        if (form) form.reset();
-    }
-    
-    document.getElementById('userAction').value = 'create_user';
-    document.getElementById('userId').value = '';
-    document.getElementById('userModalTitle').textContent = 'Nieuwe Gebruiker';
-    document.getElementById('userModalSubmitText').textContent = 'Gebruiker Aanmaken';
-    
-    // Hide access key section for new users
-    document.getElementById('accessKeySection').style.display = 'none';
-}
-
-// Edit user function
-async function editUser(userId) {
-    if (!checkRequiredFunctions()) {
-        alert('❌ System functions not loaded. Please refresh the page.');
-        return;
-    }
-    
-    try {
-        safeOpenLoadingModal();
-        
-        const response = await fetchData(`?ajax=1&action=get_user&id=${userId}`);
-        
-        safeCloseLoadingModal();
-        
-        if (response.error) {
-            throw new Error(response.error);
-        }
-        
-        // Fill form
-        if (typeof fillFormFromData !== 'undefined') {
-            fillFormFromData('userForm', response);
-        } else {
-            // Manual form filling
-            document.getElementById('name').value = response.name || '';
-            document.getElementById('email').value = response.email || '';
-            document.getElementById('phone').value = response.phone || '';
-            document.getElementById('company').value = response.company || '';
-            document.getElementById('notes').value = response.notes || '';
-        }
-        
-        // Update form action and modal title  
-        document.getElementById('userAction').value = 'update_user';
-        document.getElementById('userId').value = response.id;
-        document.getElementById('userModalTitle').textContent = 'Gebruiker Bewerken';
-        document.getElementById('userModalSubmitText').textContent = 'Gebruiker Bijwerken';
-        
-        // Set active checkbox
-        document.getElementById('active').checked = response.active == '1';
-        
-        // Show access key section and fill access key
-        document.getElementById('accessKeySection').style.display = 'block';
-        const accessKey = response.access_key || 'Geen toegangscode';
-        const formattedKey = accessKey.length > 10 ? accessKey.match(/.{1,8}/g).join('-') : accessKey;
-        document.getElementById('current_access_key').innerHTML = `
-            <div style="font-weight: 600; margin-bottom: var(--space-1);">Huidige Toegangscode:</div>
-            <div style="color: var(--primary); font-size: var(--font-size-lg);">${formattedKey}</div>
-            <div style="font-size: var(--font-size-xs); color: var(--text-tertiary); margin-top: var(--space-1);">
-                Aangemaakt: ${new Date(response.created_at || '').toLocaleDateString('nl-NL') || 'Onbekend'}
-            </div>
-        `;
-        
-        // Store current user ID for access key regeneration
-        currentEditUserId = userId;
-        
-        // Open modal
-        safeOpenModal('userModal');
-        safeShowNotification('Gebruiker geladen!', 'success');
-        
-    } catch (error) {
-        safeCloseLoadingModal();
-        console.error('Error loading user:', error);
-        safeShowNotification('Fout bij laden: ' + error.message, 'error');
-    }
-}
-
-// Course assignment functions
-async function assignCourses(userId) {
-    if (!checkRequiredFunctions()) {
-        alert('❌ System functions not loaded. Please refresh the page.');
-        return;
-    }
-    
-    const user = usersData.find(u => u.id == userId);
-    if (!user) {
-        safeShowNotification('Gebruiker niet gevonden', 'error');
-        return;
-    }
-    
-    currentAssignUserId = userId;
-    courseAssignmentCounter = 0;
-    
-    // Set user info
-    document.getElementById('user_course_info').innerHTML = `
-        <div style="font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-1);">
-            <i class="fas fa-user"></i> ${user.name}
-        </div>
-        <div style="font-size: var(--font-size-sm); color: var(--text-secondary);">
-            <i class="fas fa-envelope"></i> ${user.email} | 
-            <i class="fas fa-book"></i> ${user.course_count} cursussen | 
-            <i class="fas fa-euro-sign"></i> ${user.paid_courses} betaald
-        </div>
-    `;
-    
-    // Get current course assignments
-    try {
-        safeOpenLoadingModal();
-        
-        const result = await fetchData(`?ajax=1&action=get_user_courses&user_id=${userId}`);
-        
-        safeCloseLoadingModal();
-        
-        if (result.success) {
-            // Clear assignments
-            document.getElementById('course_assignments').innerHTML = '';
-            
-            // Add existing assignments
-            result.courses.forEach(course => {
-                addCourseAssignment(course);
-            });
-            
-            // Show modal
-            safeOpenModal('courseAssignmentModal');
-            safeShowNotification('Cursussen geladen!', 'success');
-        } else {
-            safeShowNotification('Fout bij laden: ' + (result.error || 'Onbekende fout'), 'error');
-        }
-    } catch (error) {
-        safeCloseLoadingModal();
-        console.error('Error loading courses:', error);
-        safeShowNotification('Fout bij laden: ' + error.message, 'error');
-    }
-}
-
-// Add course assignment row
-function addCourseAssignment(existingCourse = null) {
-    const id = ++courseAssignmentCounter;
-    const container = document.getElementById('course_assignments');
-    
-    const assignmentDiv = document.createElement('div');
-    assignmentDiv.className = 'card';
-    assignmentDiv.id = `assignment-${id}`;
-    assignmentDiv.style.marginBottom = 'var(--space-4)';
-    assignmentDiv.style.borderLeft = '3px solid var(--primary)';
-    
-    let courseOptions = '<option value="">-- Selecteer Cursus --</option>';
-    allCoursesData.forEach(course => {
-        const selected = existingCourse && existingCourse.course_id == course.id ? 'selected' : '';
-        const courseInfo = `${course.name} (${new Date(course.course_date).toLocaleDateString('nl-NL')})`;
-        courseOptions += `<option value="${course.id}" ${selected}>${courseInfo}</option>`;
-    });
-    
-    const paymentStatus = existingCourse ? existingCourse.payment_status : 'pending';
-    
-    assignmentDiv.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-4);">
-            <div style="font-weight: 600; color: var(--text-primary);">
-                <i class="fas fa-book"></i> Cursus Toekenning #${id}
-            </div>
-            <button type="button" class="btn btn-sm btn-danger" onclick="removeCourseAssignment(${id})">
-                <i class="fas fa-trash"></i> Verwijderen
-            </button>
-        </div>
-        
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-4); margin-bottom: var(--space-4);">
-            <div class="form-group">
-                <label>Cursus:</label>
-                <select name="course_id">${courseOptions}</select>
-            </div>
-            
-            <div class="form-group">
-                <label>Betaalstatus:</label>
-                <select name="payment_status">
-                    <option value="pending" ${paymentStatus === 'pending' ? 'selected' : ''}>⏳ Wachtend</option>
-                    <option value="paid" ${paymentStatus === 'paid' ? 'selected' : ''}>✅ Betaald</option>
-                    <option value="cancelled" ${paymentStatus === 'cancelled' ? 'selected' : ''}>❌ Geannuleerd</option>
-                </select>
-            </div>
-        </div>
-        
-        <div class="form-group">
-            <label>Notities:</label>
-            <input type="text" name="notes" placeholder="Eventuele opmerkingen..." 
-                   value="${existingCourse ? (existingCourse.notes || '') : ''}">
-        </div>
-    `;
-    
-    container.appendChild(assignmentDiv);
-}
-
-// Remove course assignment
-function removeCourseAssignment(id) {
-    const element = document.getElementById(`assignment-${id}`);
-    if (element) {
-        element.remove();
-    }
-}
-
-// FIXED: Save course assignments with proper event handling
-async function saveCourseAssignments(event = null) {
-    // Find the button that was clicked
-    const saveButton = event ? event.target : document.querySelector('#courseAssignmentModal .btn-primary');
-    
-    const assignments = [];
-    const container = document.getElementById('course_assignments');
-    const assignmentDivs = container.querySelectorAll('[id^="assignment-"]');
-    
-    assignmentDivs.forEach(div => {
-        const courseId = div.querySelector('select[name="course_id"]').value;
-        const paymentStatus = div.querySelector('select[name="payment_status"]').value;
-        const notes = div.querySelector('input[name="notes"]').value;
-        
-        if (courseId) {
-            assignments.push({
-                course_id: courseId,
-                payment_status: paymentStatus,
-                notes: notes
-            });
-        }
-    });
-    
-    const formData = new FormData();
-    formData.append('action', 'assign_courses');
-    formData.append('user_id', currentAssignUserId);
-    formData.append('courses', JSON.stringify(assignments));
-    
-    try {
-        // Safe button loading
-        if (saveButton && typeof setButtonLoading !== 'undefined') {
-            setButtonLoading(saveButton, true);
-        }
-        
-        const response = await fetch('', {
-            method: 'POST',
-            body: formData
-        });
-        
-        // Reset button loading
-        if (saveButton && typeof setButtonLoading !== 'undefined') {
-            setButtonLoading(saveButton, false);
-        }
-        
-        if (response.ok) {
-            safeShowNotification('Cursussen opgeslagen!', 'success');
-            safeCloseModal('courseAssignmentModal');
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            throw new Error('Server error: ' + response.status);
-        }
-    } catch (error) {
-        // Reset button loading on error
-        if (saveButton && typeof setButtonLoading !== 'undefined') {
-            setButtonLoading(saveButton, false);
-        }
-        console.error('Error saving courses:', error);
-        safeShowNotification('Fout bij opslaan: ' + error.message, 'error');
-    }
-}
-
-// Safe confirm delete function
-function safeConfirmDelete(itemName, callback) {
-    if (typeof confirmDelete !== 'undefined') {
-        confirmDelete(itemName, callback);
-    } else {
-        // Fallback to standard confirm
-        if (confirm(`Weet je zeker dat je "${itemName}" wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.`)) {
-            callback();
-        }
-    }
-}
-
-// Regenerate access key function
-async function regenerateAccessKey() {
-    if (!currentEditUserId) {
-        safeShowNotification('Geen gebruiker geselecteerd', 'error');
-        return;
-    }
-    
-    if (!confirm('🔄 Weet je zeker dat je een nieuwe toegangscode wilt genereren?\n\nDe oude code werkt dan niet meer.')) {
-        return;
-    }
-    
-    try {
-        let result;
-        
-        if (typeof fetchData !== 'undefined') {
-            // Use unified system
-            result = await fetchData(`?ajax=1&action=regenerate_access_key&user_id=${currentEditUserId}`);
-        } else {
-            // Fallback fetch
-            const response = await fetch(`?ajax=1&action=regenerate_access_key&user_id=${currentEditUserId}`);
-            result = await response.json();
-        }
-        
-        if (result.success) {
-            // Format the access key nicely
-            const formattedKey = result.access_key.match(/.{1,8}/g).join('-');
-            document.getElementById('current_access_key').innerHTML = `
-                <div style="font-weight: 600; margin-bottom: var(--space-1);">Huidige Toegangscode:</div>
-                <div style="color: var(--primary); font-size: var(--font-size-lg);">${formattedKey}</div>
-                <div style="font-size: var(--font-size-xs); color: var(--text-tertiary); margin-top: var(--space-1);">
-                    Gegenereerd: ${new Date().toLocaleString('nl-NL')}
-                </div>
-            `;
-            safeShowNotification(result.message, 'success');
-        } else {
-            throw new Error(result.error || 'Onbekende fout');
-        }
-    } catch (error) {
-        console.error('Error regenerating access key:', error);
-        safeShowNotification('Fout bij genereren nieuwe code: ' + error.message, 'error');
-    }
-}
-
-// Delete user function
-async function deleteUser(userId) {
-    const formData = new FormData();
-    formData.append('action', 'delete_user');
-    formData.append('user_id', userId);
-    
-    try {
-        const response = await fetch('', {
-            method: 'POST',
-            body: formData
-        });
-        
-        if (response.ok) {
-            safeShowNotification('Gebruiker gedeactiveerd!', 'success');
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            throw new Error('Server error: ' + response.status);
-        }
-    } catch (error) {
-        console.error('Error deleting user:', error);
-        safeShowNotification('Fout bij verwijderen: ' + error.message, 'error');
-    }
-}
-
-// Search and filter functions
-function applyFilters() {
-    const search = document.querySelector('input[placeholder*="Zoek"]').value;
-    const status = document.querySelector('select').value;
-    
-    const url = new URL(window.location);
-    url.searchParams.set('search', search);
-    url.searchParams.set('status', status);
-    url.searchParams.set('page', '1'); // Reset to first page
-    
-    window.location.href = url.toString();
-}
-
-// Bulk import placeholder
-function showBulkImportModal() {
-    safeShowNotification('Bulk import functionaliteit komt binnenkort!', 'info', 4000);
-}
-
-// Initialize page
+// Initialize page-specific functionality
 document.addEventListener('DOMContentLoaded', function() {
-    // Check if all functions are available
-    checkRequiredFunctions();
-    
-    // Test AJAX connection on load (for debugging)  
-    console.log('🎯 Users page loaded. Test AJAX with: testAjax()');
-    
-    // Check if admin_footer.php loaded correctly
-    setTimeout(() => {
-        if (typeof openModal === 'undefined') {
-            console.error('❌ admin_footer.php not loaded correctly');
-            console.log('💡 Check if admin_footer.php exists and is included properly');
+    // Bulk action enhancement
+    document.querySelector('select[name="bulk_action"]').addEventListener('change', function() {
+        const courseSelect = document.getElementById('bulk-course-select');
+        if (this.value === 'bulk_convert') {
+            courseSelect.style.display = 'inline-block';
+            courseSelect.required = true;
+        } else {
+            courseSelect.style.display = 'none';
+            courseSelect.required = false;
         }
-    }, 100);
+    });
+
+    // Select all functionality
+    document.getElementById('select-all').addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.interest-checkbox');
+        checkboxes.forEach(cb => cb.checked = this.checked);
+    });
+    
+    // Course option styling
+    document.querySelectorAll('.course-option').forEach(option => {
+        option.addEventListener('mouseenter', function() {
+            this.style.borderColor = 'var(--primary)';
+            this.style.background = '#faf5ff';
+        });
+        
+        option.addEventListener('mouseleave', function() {
+            if (!this.classList.contains('selected')) {
+                this.style.borderColor = 'var(--border)';
+                this.style.background = 'white';
+            }
+        });
+    });
 });
+
+// Enhanced conversion function with unified notifications
+function executeConversion(interestId) {
+    if (!selectedCourseId) {
+        showNotification('Please select a course first', 'warning');
+        return;
+    }
+
+    const button = document.getElementById('convert-btn-' + interestId);
+    setButtonLoading(button, true);
+
+    fetchData('planning.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: `action=convert_to_enrollment&interest_id=${interestId}&course_id=${selectedCourseId}`
+    })
+    .then(data => {
+        if (data.success) {
+            showNotification(`Successfully converted to enrollment! Course: ${data.course_name}`, 'success');
+            
+            // Ask user if they want to view course details
+            if (confirm('Would you like to view the course details?')) {
+                window.location.href = data.redirect_url;
+            } else {
+                location.reload();
+            }
+        } else {
+            showNotification('Conversion failed: ' + data.message, 'error');
+            setButtonLoading(button, false);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Network error occurred', 'error');
+        setButtonLoading(button, false);
+    });
+}
+
+// Toggle conversion panel
+function toggleConversion(interestId) {
+    const panel = document.getElementById('conversion-' + interestId);
+    if (panel.style.display === 'none') {
+        // Hide all other panels
+        document.querySelectorAll('.conversion-section').forEach(p => p.style.display = 'none');
+        panel.style.display = 'block';
+        currentInterestId = interestId;
+    } else {
+        panel.style.display = 'none';
+        currentInterestId = null;
+    }
+    selectedCourseId = null;
+    updateConvertButton(interestId);
+}
+
+// Select course for conversion
+function selectCourse(interestId, courseId) {
+    // Reset all course options
+    document.querySelectorAll('.course-option').forEach(opt => {
+        opt.classList.remove('selected');
+        opt.style.borderColor = 'var(--border)';
+        opt.style.background = 'white';
+    });
+    
+    // Select the clicked option
+    const selectedOption = document.querySelector(`[data-course-id="${courseId}"]`);
+    selectedOption.classList.add('selected');
+    selectedOption.style.borderColor = 'var(--primary)';
+    selectedOption.style.background = '#eff6ff';
+    
+    selectedCourseId = courseId;
+    updateConvertButton(interestId);
+}
+
+// Update convert button state
+function updateConvertButton(interestId) {
+    const button = document.getElementById('convert-btn-' + interestId);
+    if (selectedCourseId) {
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-check"></i> Confirm Conversion';
+        button.className = 'btn btn-success';
+    } else {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Select Course First';
+        button.className = 'btn btn-secondary';
+    }
+}
+
+// Set priority with unified notifications
+function setPriority(interestId, priority) {
+    fetch('planning.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: `action=update_priority&interest_id=${interestId}&priority=${priority}`
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Priority updated', 'success');
+            location.reload();
+        } else {
+            showNotification('Failed to update priority: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        showNotification('Network error occurred', 'error');
+    });
+}
+
+// Add note with unified modal system
+function addNote(interestId) {
+    const note = prompt('Add admin note:');
+    if (note && note.trim()) {
+        fetch('planning.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: `action=add_note&interest_id=${interestId}&note=${encodeURIComponent(note)}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('Note added', 'success');
+                location.reload();
+            } else {
+                showNotification('Failed to add note: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            showNotification('Network error occurred', 'error');
+        });
+    }
+}
+
+// Refresh data
+function refreshData() {
+    showNotification('Refreshing data...', 'info', 1000);
+    setTimeout(() => location.reload(), 500);
+}
+
+// Auto-refresh every 3 minutes
+setInterval(refreshData, 180000);
+
+// Generate planning dashboard auto-functions
+generateEditFunction('interest');
+generateResetFunction('interest');
+
+console.log('🎯 Planning Dashboard v6.4.0 - Unified Admin Edition loaded');
+console.log('✅ Using unified admin system components');
+console.log('✅ Enhanced conversion flow ready');
 </script>
 
-<?php
-require_once 'admin_footer.php';
+<?php 
+// Include unified admin footer
+require_once 'admin_footer.php'; 
 ?>
