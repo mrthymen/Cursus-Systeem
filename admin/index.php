@@ -464,99 +464,88 @@ $stats = [
             </div>
         </div>
     </div>
-</div>
-
-<!-- Priority Alert for high-priority interests -->
-<?php if ($highPriorityInterest > 0): ?>
-<div style="background: linear-gradient(135deg, #fee2e2 0%, #fef2f2 100%); border: 2px solid var(--error); border-radius: var(--radius); padding: var(--space-6); margin-bottom: var(--space-6); animation: pulse 2s infinite;">
-    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4);">
-        <div>
-            <h3 style="color: var(--error); margin-bottom: var(--space-2);">
-                <i class="fas fa-exclamation-triangle"></i> High Priority Alert
-            </h3>
-            <p style="color: var(--error); font-weight: 600;">
-                <?= $highPriorityInterest ?> high-priority interests require immediate attention!
-            </p>
-        </div>
-        <a href="planning.php" class="btn btn-danger">
-            <i class="fas fa-fire"></i> View Planning
-        </a>
-    </div>
-</div>
-<?php endif; ?>
-
-<!-- Quick Actions -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-6); margin-bottom: var(--space-6);">
-    <?php if ($stats['pending_interest'] > 0): ?>
-    <a href="planning.php" class="card" style="text-decoration: none; color: inherit; transition: all 0.2s; border-left: 4px solid <?= $stats['high_priority_interest'] > 0 ? 'var(--error)' : 'var(--warning)' ?>;"
-       onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-lg)'"
-       onmouseout="this.style.transform=''; this.style.boxShadow=''">
-        <h3 style="color: var(--text-primary); margin-bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2);">
-            <i class="fas fa-clipboard-list"></i> Interest Management
-        </h3>
-        <p style="color: var(--text-secondary); margin-bottom: var(--space-3);">
-            Manage course interest and convert to enrollments
-        </p>
-        <div style="display: flex; gap: var(--space-2); flex-wrap: wrap;">
-            <span style="background: var(--warning); color: var(--text-inverse); padding: var(--space-1) var(--space-3); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600;">
-                <?= $stats['pending_interest'] ?> pending
-            </span>
-            <?php if ($stats['high_priority_interest'] > 0): ?>
-                <span style="background: var(--error); color: var(--text-inverse); padding: var(--space-1) var(--space-3); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600;">
-                    <?= $stats['high_priority_interest'] ?> urgent
-                </span>
+    
+    <!-- Quick Actions -->
+    <div style="border-top: 1px solid var(--border); margin-top: var(--space-4); padding-top: var(--space-4);">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4);">
+            
+            <?php if ($stats['pending_interest'] > 0): ?>
+            <a href="planning.php" style="text-decoration: none; color: inherit; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-sm); transition: all 0.2s; display: block; border-left: 3px solid <?= $stats['high_priority_interest'] > 0 ? 'var(--error)' : 'var(--warning)' ?>;" 
+               onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-lg)'"
+               onmouseout="this.style.transform=''; this.style.boxShadow=''">
+                <div style="display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2);">
+                    <i class="fas fa-clipboard-list"></i>
+                    <strong>Interest Management</strong>
+                </div>
+                <div style="font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: var(--space-3);">
+                    Manage course interest and convert to enrollments
+                </div>
+                <div style="display: flex; gap: var(--space-2); flex-wrap: wrap;">
+                    <span style="background: var(--warning); color: var(--text-inverse); padding: var(--space-1) var(--space-2); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600;">
+                        <?= $stats['pending_interest'] ?> pending
+                    </span>
+                    <?php if ($stats['high_priority_interest'] > 0): ?>
+                        <span style="background: var(--error); color: var(--text-inverse); padding: var(--space-1) var(--space-2); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600;">
+                            <?= $stats['high_priority_interest'] ?> urgent
+                        </span>
+                    <?php endif; ?>
+                </div>
+            </a>
             <?php endif; ?>
+            
+            <a href="courses.php" style="text-decoration: none; color: inherit; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-sm); transition: all 0.2s; display: block; border-left: 3px solid var(--neutral);" 
+               onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-lg)'"
+               onmouseout="this.style.transform=''; this.style.boxShadow=''">
+                <div style="display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2);">
+                    <i class="fas fa-book"></i>
+                    <strong>Course Management</strong>
+                </div>
+                <div style="font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: var(--space-3);">
+                    Beheer cursussen, deelnemers en betalingen
+                </div>
+                <?php if ($stats['upcoming_courses'] > 0): ?>
+                    <span style="background: var(--primary); color: var(--text-inverse); padding: var(--space-1) var(--space-2); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600;">
+                        <?= $stats['upcoming_courses'] ?> upcoming
+                    </span>
+                <?php endif; ?>
+            </a>
+            
+            <a href="users.php" style="text-decoration: none; color: inherit; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-sm); transition: all 0.2s; display: block; border-left: 3px solid var(--primary);" 
+               onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-lg)'"
+               onmouseout="this.style.transform=''; this.style.boxShadow=''">
+                <div style="display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2);">
+                    <i class="fas fa-users"></i>
+                    <strong>User Administration</strong>
+                </div>
+                <div style="font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: var(--space-3);">
+                    Complete gebruikersadministratie en toekenningen
+                </div>
+                <?php if ($stats['new_users_week'] > 0): ?>
+                    <span style="background: var(--success); color: var(--text-inverse); padding: var(--space-1) var(--space-2); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600;">
+                        +<?= $stats['new_users_week'] ?> new
+                    </span>
+                <?php endif; ?>
+            </a>
+            
+            <?php if ($stats['ready_certificates'] > 0): ?>
+            <a href="certificates.php?ready=1" style="text-decoration: none; color: inherit; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-sm); transition: all 0.2s; display: block; border-left: 3px solid var(--success);" 
+               onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-lg)'"
+               onmouseout="this.style.transform=''; this.style.boxShadow=''">
+                <div style="display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2);">
+                    <i class="fas fa-certificate"></i>
+                    <strong>Certificate Generation</strong>
+                </div>
+                <div style="font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: var(--space-3);">
+                    Generate and manage course certificates
+                </div>
+                <span style="background: var(--success); color: var(--text-inverse); padding: var(--space-1) var(--space-2); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600;">
+                    <?= $stats['ready_certificates'] ?> ready
+                </span>
+            </a>
+            <?php endif; ?>
+            
         </div>
-    </a>
-    <?php endif; ?>
-    
-    <a href="courses.php" class="card" style="text-decoration: none; color: inherit; transition: all 0.2s; border-left: 4px solid var(--neutral);"
-       onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-lg)'"
-       onmouseout="this.style.transform=''; this.style.boxShadow=''">
-        <h3 style="color: var(--text-primary); margin-bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2);">
-            <i class="fas fa-book"></i> Course Management
-        </h3>
-        <p style="color: var(--text-secondary); margin-bottom: var(--space-3);">
-            Beheer cursussen, deelnemers en betalingen
-        </p>
-        <?php if ($stats['upcoming_courses'] > 0): ?>
-            <span style="background: var(--primary); color: var(--text-inverse); padding: var(--space-1) var(--space-3); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600;">
-                <?= $stats['upcoming_courses'] ?> upcoming
-            </span>
-        <?php endif; ?>
-    </a>
-    
-    <a href="users.php" class="card" style="text-decoration: none; color: inherit; transition: all 0.2s; border-left: 4px solid var(--primary);"
-       onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-lg)'"
-       onmouseout="this.style.transform=''; this.style.boxShadow=''">
-        <h3 style="color: var(--text-primary); margin-bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2);">
-            <i class="fas fa-users"></i> User Administration
-        </h3>
-        <p style="color: var(--text-secondary); margin-bottom: var(--space-3);">
-            Complete gebruikersadministratie en toekenningen
-        </p>
-        <?php if ($stats['new_users_week'] > 0): ?>
-            <span style="background: var(--success); color: var(--text-inverse); padding: var(--space-1) var(--space-3); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600;">
-                +<?= $stats['new_users_week'] ?> new
-            </span>
-        <?php endif; ?>
-    </a>
-    
-    <?php if ($stats['ready_certificates'] > 0): ?>
-    <a href="certificates.php?ready=1" class="card" style="text-decoration: none; color: inherit; transition: all 0.2s; border-left: 4px solid var(--success);"
-       onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-lg)'"
-       onmouseout="this.style.transform=''; this.style.boxShadow=''">
-        <h3 style="color: var(--text-primary); margin-bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2);">
-            <i class="fas fa-certificate"></i> Certificate Generation
-        </h3>
-        <p style="color: var(--text-secondary); margin-bottom: var(--space-3);">
-            Generate and manage course certificates
-        </p>
-        <span style="background: var(--success); color: var(--text-inverse); padding: var(--space-1) var(--space-3); border-radius: 12px; font-size: var(--font-size-xs); font-weight: 600;">
-            <?= $stats['ready_certificates'] ?> ready
-        </span>
-    </a>
-    <?php endif; ?>
+    </div>
 </div>
 
 <!-- Recent Data Grid -->
