@@ -125,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
         }
         
-        header('Location: courses_unified_FIXED.php' . (isset($_GET['tab']) ? '?tab=' . $_GET['tab'] : ''));
+        header('Location: courses.php' . (isset($_GET['tab']) ? '?tab=' . $_GET['tab'] : ''));
         exit;
     }
 }
