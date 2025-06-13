@@ -828,348 +828,76 @@ function showBulkImportModal() {
 }
 
 <script>
-// DIRECT FUNCTION DEFINITIONS - NO COMPLEX STRUCTURE
-console.log('🚀 Starting simple user management JavaScript...');
+console.log('🚀 MINIMAL JavaScript Test');
 
-// Global variables
-var currentEditUserId = null;
-var currentAssignUserId = null;
-var courseAssignmentCounter = 0;
-var allCoursesData = <?= json_encode($allCourses) ?>;
-
-// Core helper functions - DIRECT ASSIGNMENT
-window.fetchData = function(url) {
-    console.log('📡 Fetching:', url);
-    return fetch(url)
-        .then(function(response) {
-            if (!response.ok) {
-                throw new Error('Network response was not ok: ' + response.status);
-            }
-            return response.text();
-        })
-        .then(function(text) {
-            try {
-                return JSON.parse(text);
-            } catch (parseError) {
-                console.error('Response was not JSON:', text);
-                throw new Error('Server returned invalid JSON');
-            }
-        });
-};
-
-window.showNotification = function(message, type) {
-    console.log('📢 Notification:', message, type);
-    var notification = document.createElement('div');
-    notification.className = 'message ' + (type || 'info');
-    notification.textContent = message;
-    notification.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;max-width:300px;padding:1rem;border-radius:6px;color:white;font-weight:500;';
-    
-    if (type === 'success') notification.style.background = '#059669';
-    else if (type === 'error') notification.style.background = '#dc2626';
-    else if (type === 'warning') notification.style.background = '#d97706';
-    else notification.style.background = '#2563eb';
-    
-    document.body.appendChild(notification);
-    setTimeout(function() { notification.remove(); }, 3000);
-};
-
+// Test if basic script runs
 window.openModal = function(modalId) {
-    console.log('🎯 Opening modal:', modalId);
+    console.log('Opening modal:', modalId);
     var modal = document.getElementById(modalId);
     if (modal) {
         modal.style.display = 'block';
-        if (modalId === 'userModal' && !document.getElementById('userId').value) {
-            resetUserForm();
-        }
-    } else {
-        console.error('❌ Modal not found:', modalId);
     }
 };
 
 window.closeModal = function(modalId) {
-    console.log('❌ Closing modal:', modalId);
+    console.log('Closing modal:', modalId);
     var modal = document.getElementById(modalId);
     if (modal) {
         modal.style.display = 'none';
     }
 };
 
-window.applyFilters = function() {
-    console.log('🔍 Applying filters...');
-    var search = document.getElementById('searchInput').value;
-    var status = document.getElementById('statusFilter').value;
-    
-    var url = new URL(window.location);
-    url.searchParams.set('search', search);
-    url.searchParams.set('status', status);
-    url.searchParams.set('page', '1');
-    
-    window.location.href = url.toString();
-};
-
-window.resetUserForm = function() {
-    console.log('🔄 Resetting user form...');
-    var form = document.getElementById('userForm');
-    if (form) {
-        form.reset();
-        document.getElementById('userAction').value = 'create_user';
-        document.getElementById('userId').value = '';
-        document.getElementById('userModalTitle').textContent = 'Nieuwe Gebruiker Aanmaken';
-        document.getElementById('userModalSubmitText').textContent = 'Gebruiker Aanmaken';
-        
-        var activeCheckbox = document.getElementById('active');
-        if (activeCheckbox) {
-            activeCheckbox.checked = true;
-        }
-    }
-};
-
-window.deleteUser = function(userId) {
-    console.log('🗑️ Delete user called:', userId);
-    if (!confirm('Weet je zeker dat je deze gebruiker wilt deactiveren?\n\nDe gebruiker wordt niet verwijderd maar gemarkeerd als inactief.')) {
-        return;
-    }
-    
-    var form = document.createElement('form');
-    form.method = 'POST';
-    form.innerHTML = '<input type="hidden" name="action" value="delete_user"><input type="hidden" name="user_id" value="' + userId + '">';
-    document.body.appendChild(form);
-    form.submit();
-};
-
 window.editUser = function(id) {
-    console.log('🔧 editUser called with ID:', id);
-    fetchData('?ajax=1&action=get_user&id=' + id)
-        .then(function(response) {
-            if (response.error) {
-                throw new Error(response.error);
-            }
-            
-            // Fill form
-            var form = document.getElementById('userForm');
-            if (form) {
-                Object.keys(response).forEach(function(key) {
-                    var field = form.querySelector('[name="' + key + '"], #' + key);
-                    if (field) {
-                        if (field.type === 'checkbox') {
-                            field.checked = response[key] == 1;
-                        } else {
-                            field.value = response[key] || '';
-                        }
-                    }
-                });
-            }
-            
-            // Update form
-            document.getElementById('userAction').value = 'update_user';
-            document.getElementById('userId').value = response.id;
-            document.getElementById('userModalTitle').textContent = 'Gebruiker Bewerken';
-            document.getElementById('userModalSubmitText').textContent = 'Gebruiker Bijwerken';
-            
-            currentEditUserId = id;
-            openModal('userModal');
-            showNotification('Gebruiker geladen!', 'success');
-        })
-        .catch(function(error) {
-            console.error('Error loading user:', error);
-            showNotification('Fout bij laden: ' + error.message, 'error');
-        });
+    console.log('Edit user:', id);
+    alert('Edit user function called with ID: ' + id);
 };
 
-window.assignCourses = function(userId) {
-    console.log('📚 Assign courses called:', userId);
-    currentAssignUserId = userId;
-    courseAssignmentCounter = 0;
-    
-    // Load user data first
-    fetchData('?ajax=1&action=get_user&id=' + userId)
-        .then(function(userData) {
-            if (userData.error) {
-                throw new Error(userData.error);
-            }
-            
-            // Set user info
-            document.getElementById('userCourseInfo').innerHTML = 
-                '<div class="info-header">' +
-                '<div class="info-title">👤 ' + userData.name + '</div>' +
-                '<div class="info-subtitle">📧 ' + userData.email + '</div>' +
-                '</div>';
-            
-            // Get current course assignments
-            return fetchData('?ajax=1&action=get_user_courses&id=' + userId);
-        })
-        .then(function(coursesData) {
-            if (coursesData.success) {
-                // Clear assignments
-                document.getElementById('courseAssignments').innerHTML = '';
-                
-                // Add existing assignments
-                coursesData.courses.forEach(function(course) {
-                    addCourseAssignment(course);
-                });
-                
-                // Show modal
-                openModal('courseAssignmentModal');
-                showNotification('Cursusgegevens geladen!', 'success');
-            } else {
-                throw new Error(coursesData.message || 'Fout bij laden cursusgegevens');
-            }
-        })
-        .catch(function(error) {
-            console.error('Error loading course assignments:', error);
-            showNotification('Fout bij laden: ' + error.message, 'error');
-        });
-};
-
-window.addCourseAssignment = function(existingCourse) {
-    console.log('➕ Adding course assignment:', existingCourse);
-    var id = ++courseAssignmentCounter;
-    var container = document.getElementById('courseAssignments');
-    
-    var assignmentDiv = document.createElement('div');
-    assignmentDiv.className = 'form-group';
-    assignmentDiv.id = 'assignment-' + id;
-    
-    var courseOptions = '<option value="">-- Selecteer Cursus --</option>';
-    allCoursesData.forEach(function(course) {
-        var selected = existingCourse && existingCourse.course_id == course.id ? 'selected' : '';
-        var courseInfo = course.name + ' (' + new Date(course.course_date).toLocaleDateString('nl-NL') + ')';
-        courseOptions += '<option value="' + course.id + '" ' + selected + '>' + courseInfo + '</option>';
-    });
-    
-    var paymentStatus = existingCourse ? existingCourse.payment_status : 'pending';
-    
-    assignmentDiv.innerHTML = 
-        '<div class="assignment-header">' +
-        '<label>Cursus Toekenning #' + id + '</label>' +
-        '<button type="button" onclick="removeCourseAssignment(' + id + ')" class="btn btn-sm btn-danger">' +
-        '<i class="fas fa-trash"></i>' +
-        '</button>' +
-        '</div>' +
-        '<div class="form-grid">' +
-        '<div class="form-group">' +
-        '<select name="course_id" required>' + courseOptions + '</select>' +
-        '</div>' +
-        '<div class="form-group">' +
-        '<select name="payment_status">' +
-        '<option value="pending"' + (paymentStatus === 'pending' ? ' selected' : '') + '>⏳ Wachtend</option>' +
-        '<option value="paid"' + (paymentStatus === 'paid' ? ' selected' : '') + '>✅ Betaald</option>' +
-        '<option value="cancelled"' + (paymentStatus === 'cancelled' ? ' selected' : '') + '>❌ Geannuleerd</option>' +
-        '</select>' +
-        '</div>' +
-        '</div>' +
-        '<div class="form-group">' +
-        '<input type="text" name="notes" placeholder="Eventuele opmerkingen..." value="' + (existingCourse ? (existingCourse.notes || '') : '') + '">' +
-        '</div>';
-    
-    container.appendChild(assignmentDiv);
-};
-
-window.removeCourseAssignment = function(id) {
-    console.log('➖ Removing course assignment:', id);
-    var element = document.getElementById('assignment-' + id);
-    if (element) {
-        element.remove();
+window.deleteUser = function(id) {
+    console.log('Delete user:', id);
+    if (confirm('Delete user ' + id + '?')) {
+        alert('Would delete user ' + id);
     }
 };
 
-window.saveCourseAssignments = function() {
-    console.log('💾 Saving course assignments...');
-    var assignments = [];
-    var container = document.getElementById('courseAssignments');
-    var assignmentDivs = container.querySelectorAll('[id^="assignment-"]');
-    
-    assignmentDivs.forEach(function(div) {
-        var courseId = div.querySelector('select[name="course_id"]').value;
-        var paymentStatus = div.querySelector('select[name="payment_status"]').value;
-        var notes = div.querySelector('input[name="notes"]').value;
-        
-        if (courseId) {
-            assignments.push({
-                course_id: courseId,
-                payment_status: paymentStatus,
-                notes: notes
-            });
-        }
-    });
-    
-    var form = document.createElement('form');
-    form.method = 'POST';
-    form.innerHTML = 
-        '<input type="hidden" name="action" value="assign_courses">' +
-        '<input type="hidden" name="user_id" value="' + currentAssignUserId + '">' +
-        '<input type="hidden" name="courses" value=\'' + JSON.stringify(assignments) + '\'>';
-    document.body.appendChild(form);
-    form.submit();
+window.assignCourses = function(id) {
+    console.log('Assign courses:', id);
+    alert('Assign courses function called with ID: ' + id);
 };
 
 window.showBulkImportModal = function() {
-    console.log('📋 Bulk import modal called');
-    showNotification('📋 Bulk import functionaliteit komt binnenkort!', 'info');
+    console.log('Bulk import');
+    alert('Bulk import clicked');
 };
 
-window.testAjax = function() {
-    console.log('🧪 Testing AJAX connection...');
-    fetchData('?ajax=1&action=test')
-        .then(function(response) {
-            if (response.status === 'success') {
-                console.log('✅ AJAX connection working:', response.message);
-                showNotification('AJAX connection working!', 'success');
-            }
-        })
-        .catch(function(error) {
-            console.error('❌ AJAX test failed:', error);
-            showNotification('AJAX test failed: ' + error.message, 'error');
-        });
+window.applyFilters = function() {
+    console.log('Apply filters');
+    alert('Apply filters clicked');
 };
 
-// Event listeners
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('📄 DOM Content Loaded');
-    testAjax();
-    console.log('✅ Simple user management JavaScript loaded');
-});
-
-// Close modal when clicking outside
-window.onclick = function(event) {
-    if (event.target.classList.contains('modal')) {
-        event.target.style.display = 'none';
+window.resetUserForm = function() {
+    console.log('Reset user form');
+    var form = document.getElementById('userForm');
+    if (form) {
+        form.reset();
     }
 };
 
-// Keyboard shortcuts
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        var modals = document.querySelectorAll('.modal');
-        modals.forEach(function(modal) {
-            if (modal.style.display === 'block') {
-                modal.style.display = 'none';
-            }
-        });
-    }
-    
-    if (e.ctrlKey && e.key === 'n') {
-        e.preventDefault();
-        openModal('userModal');
-        resetUserForm();
-    }
-});
+console.log('✅ MINIMAL functions loaded');
 
-// Debug check
+// Test immediately
 setTimeout(function() {
-    console.log('🔧 Function check:');
-    console.log('- openModal:', typeof window.openModal);
-    console.log('- editUser:', typeof window.editUser);
-    console.log('- deleteUser:', typeof window.deleteUser);
-    console.log('- assignCourses:', typeof window.assignCourses);
-    console.log('- showBulkImportModal:', typeof window.showBulkImportModal);
+    console.log('🔧 Testing function availability:');
+    console.log('openModal:', typeof window.openModal);
+    console.log('editUser:', typeof window.editUser);
+    console.log('deleteUser:', typeof window.deleteUser);
+    console.log('assignCourses:', typeof window.assignCourses);
     
     if (typeof window.openModal === 'function') {
-        console.log('✅ All functions loaded successfully!');
+        console.log('🎉 SUCCESS: Functions are loaded!');
     } else {
-        console.error('❌ Functions still not loaded');
+        console.error('❌ FAIL: Functions still not loaded');
     }
-}, 500);
+}, 100);
 </script>
 </script>
 
