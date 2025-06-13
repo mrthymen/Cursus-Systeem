@@ -828,207 +828,88 @@ function showBulkImportModal() {
 }
 
 <script>
-// ============================================
-// USER MANAGEMENT SYSTEM v6.4.0
-// Complete self-contained JavaScript
-// ============================================
-
-console.log('🚀 Loading user management JavaScript...');
+// DIRECT FUNCTION DEFINITIONS - NO COMPLEX STRUCTURE
+console.log('🚀 Starting simple user management JavaScript...');
 
 // Global variables
-let currentEditUserId = null;
-let currentAssignUserId = null;
-let courseAssignmentCounter = 0;
-const allCoursesData = <?= json_encode($allCourses) ?>;
+var currentEditUserId = null;
+var currentAssignUserId = null;
+var courseAssignmentCounter = 0;
+var allCoursesData = <?= json_encode($allCourses) ?>;
 
-// ============================================
-// CORE HELPER FUNCTIONS
-// ============================================
-
-function fetchData(url) {
+// Core helper functions - DIRECT ASSIGNMENT
+window.fetchData = function(url) {
     console.log('📡 Fetching:', url);
     return fetch(url)
-        .then(response => {
+        .then(function(response) {
             if (!response.ok) {
                 throw new Error('Network response was not ok: ' + response.status);
             }
             return response.text();
         })
-        .then(text => {
+        .then(function(text) {
             try {
                 return JSON.parse(text);
             } catch (parseError) {
                 console.error('Response was not JSON:', text);
-                throw new Error('Server returned invalid JSON. Check PHP errors.');
+                throw new Error('Server returned invalid JSON');
             }
         });
-}
+};
 
-function showNotification(message, type = 'info') {
+window.showNotification = function(message, type) {
     console.log('📢 Notification:', message, type);
-    const notification = document.createElement('div');
-    notification.className = `message ${type}`;
+    var notification = document.createElement('div');
+    notification.className = 'message ' + (type || 'info');
     notification.textContent = message;
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        z-index: 9999;
-        max-width: 300px;
-        padding: 1rem;
-        border-radius: 6px;
-        color: white;
-        font-weight: 500;
-    `;
+    notification.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;max-width:300px;padding:1rem;border-radius:6px;color:white;font-weight:500;';
     
-    // Set background based on type
-    switch(type) {
-        case 'success': notification.style.background = '#059669'; break;
-        case 'error': notification.style.background = '#dc2626'; break;
-        case 'warning': notification.style.background = '#d97706'; break;
-        default: notification.style.background = '#2563eb';
-    }
+    if (type === 'success') notification.style.background = '#059669';
+    else if (type === 'error') notification.style.background = '#dc2626';
+    else if (type === 'warning') notification.style.background = '#d97706';
+    else notification.style.background = '#2563eb';
     
     document.body.appendChild(notification);
-    setTimeout(() => notification.remove(), 3000);
-}
+    setTimeout(function() { notification.remove(); }, 3000);
+};
 
-function openModal(modalId) {
+window.openModal = function(modalId) {
     console.log('🎯 Opening modal:', modalId);
-    const modal = document.getElementById(modalId);
+    var modal = document.getElementById(modalId);
     if (modal) {
         modal.style.display = 'block';
-        
-        // Reset form if it's a new item
         if (modalId === 'userModal' && !document.getElementById('userId').value) {
             resetUserForm();
         }
     } else {
         console.error('❌ Modal not found:', modalId);
     }
-}
+};
 
-function closeModal(modalId) {
+window.closeModal = function(modalId) {
     console.log('❌ Closing modal:', modalId);
-    const modal = document.getElementById(modalId);
+    var modal = document.getElementById(modalId);
     if (modal) {
         modal.style.display = 'none';
     }
-}
+};
 
-function fillFormFromData(formId, data) {
-    console.log('📝 Filling form:', formId, data);
-    const form = document.getElementById(formId);
-    if (!form) {
-        console.error('❌ Form not found:', formId);
-        return;
-    }
-    
-    Object.keys(data).forEach(key => {
-        const field = form.querySelector(`[name="${key}"], #${key}`);
-        if (field) {
-            if (field.type === 'checkbox') {
-                field.checked = data[key] == 1;
-            } else {
-                field.value = data[key] || '';
-            }
-        }
-    });
-}
-
-function resetForm(formId) {
-    console.log('🔄 Resetting form:', formId);
-    const form = document.getElementById(formId);
-    if (form) {
-        form.reset();
-    }
-}
-
-// ============================================
-// EDIT FUNCTION GENERATOR
-// ============================================
-
-function generateEditFunction(entity) {
-    console.log('⚙️ Generating edit function for:', entity);
-    const funcName = 'edit' + entity.charAt(0).toUpperCase() + entity.slice(1);
-    
-    window[funcName] = async function(id) {
-        console.log(`🔧 ${funcName} called with ID:`, id);
-        try {
-            showNotification('Laden...', 'info');
-            
-            const response = await fetchData(`?ajax=1&action=get_${entity}&id=${id}`);
-            
-            if (response.error) {
-                throw new Error(response.error);
-            }
-            
-            // Fill form
-            const formId = entity + 'Form';
-            fillFormFromData(formId, response);
-            
-            // Update form action and modal title
-            document.getElementById(entity + 'Action').value = 'update_' + entity;
-            document.getElementById(entity + 'Id').value = response.id;
-            document.getElementById(entity + 'ModalTitle').textContent = entity.charAt(0).toUpperCase() + entity.slice(1) + ' Bewerken';
-            document.getElementById(entity + 'ModalSubmitText').textContent = entity.charAt(0).toUpperCase() + entity.slice(1) + ' Bijwerken';
-            
-            // Store current ID for other functions
-            if (entity === 'user') {
-                currentEditUserId = id;
-            }
-            
-            // Open modal
-            openModal(entity + 'Modal');
-            showNotification(entity.charAt(0).toUpperCase() + entity.slice(1) + ' geladen!', 'success');
-            
-        } catch (error) {
-            console.error('Error loading ' + entity + ':', error);
-            showNotification('Fout bij laden: ' + error.message, 'error');
-        }
-    };
-    
-    console.log(`✅ Generated function: ${funcName}`);
-}
-
-function generateResetFunction(entity) {
-    console.log('⚙️ Generating reset function for:', entity);
-    const funcName = 'reset' + entity.charAt(0).toUpperCase() + entity.slice(1) + 'Form';
-    
-    window[funcName] = function() {
-        console.log(`🔄 ${funcName} called`);
-        const formId = entity + 'Form';
-        resetForm(formId);
-        
-        document.getElementById(entity + 'Action').value = 'create_' + entity;
-        document.getElementById(entity + 'Id').value = '';
-        document.getElementById(entity + 'ModalTitle').textContent = entity.charAt(0).toUpperCase() + entity.slice(1) + ' Aanmaken';
-        document.getElementById(entity + 'ModalSubmitText').textContent = entity.charAt(0).toUpperCase() + entity.slice(1) + ' Aanmaken';
-    };
-    
-    console.log(`✅ Generated function: ${funcName}`);
-}
-
-// ============================================
-// USER-SPECIFIC FUNCTIONS
-// ============================================
-
-function applyFilters() {
+window.applyFilters = function() {
     console.log('🔍 Applying filters...');
-    const search = document.getElementById('searchInput').value;
-    const status = document.getElementById('statusFilter').value;
+    var search = document.getElementById('searchInput').value;
+    var status = document.getElementById('statusFilter').value;
     
-    const url = new URL(window.location);
+    var url = new URL(window.location);
     url.searchParams.set('search', search);
     url.searchParams.set('status', status);
     url.searchParams.set('page', '1');
     
     window.location.href = url.toString();
-}
+};
 
-function resetUserForm() {
+window.resetUserForm = function() {
     console.log('🔄 Resetting user form...');
-    const form = document.getElementById('userForm');
+    var form = document.getElementById('userForm');
     if (form) {
         form.reset();
         document.getElementById('userAction').value = 'create_user';
@@ -1036,142 +917,172 @@ function resetUserForm() {
         document.getElementById('userModalTitle').textContent = 'Nieuwe Gebruiker Aanmaken';
         document.getElementById('userModalSubmitText').textContent = 'Gebruiker Aanmaken';
         
-        // Set active checkbox for new users
-        const activeCheckbox = document.getElementById('active');
+        var activeCheckbox = document.getElementById('active');
         if (activeCheckbox) {
             activeCheckbox.checked = true;
         }
     }
-}
+};
 
-function deleteUser(userId) {
+window.deleteUser = function(userId) {
     console.log('🗑️ Delete user called:', userId);
     if (!confirm('Weet je zeker dat je deze gebruiker wilt deactiveren?\n\nDe gebruiker wordt niet verwijderd maar gemarkeerd als inactief.')) {
         return;
     }
     
-    const form = document.createElement('form');
+    var form = document.createElement('form');
     form.method = 'POST';
-    form.innerHTML = `
-        <input type="hidden" name="action" value="delete_user">
-        <input type="hidden" name="user_id" value="${userId}">
-    `;
+    form.innerHTML = '<input type="hidden" name="action" value="delete_user"><input type="hidden" name="user_id" value="' + userId + '">';
     document.body.appendChild(form);
     form.submit();
-}
+};
 
-async function assignCourses(userId) {
+window.editUser = function(id) {
+    console.log('🔧 editUser called with ID:', id);
+    fetchData('?ajax=1&action=get_user&id=' + id)
+        .then(function(response) {
+            if (response.error) {
+                throw new Error(response.error);
+            }
+            
+            // Fill form
+            var form = document.getElementById('userForm');
+            if (form) {
+                Object.keys(response).forEach(function(key) {
+                    var field = form.querySelector('[name="' + key + '"], #' + key);
+                    if (field) {
+                        if (field.type === 'checkbox') {
+                            field.checked = response[key] == 1;
+                        } else {
+                            field.value = response[key] || '';
+                        }
+                    }
+                });
+            }
+            
+            // Update form
+            document.getElementById('userAction').value = 'update_user';
+            document.getElementById('userId').value = response.id;
+            document.getElementById('userModalTitle').textContent = 'Gebruiker Bewerken';
+            document.getElementById('userModalSubmitText').textContent = 'Gebruiker Bijwerken';
+            
+            currentEditUserId = id;
+            openModal('userModal');
+            showNotification('Gebruiker geladen!', 'success');
+        })
+        .catch(function(error) {
+            console.error('Error loading user:', error);
+            showNotification('Fout bij laden: ' + error.message, 'error');
+        });
+};
+
+window.assignCourses = function(userId) {
     console.log('📚 Assign courses called:', userId);
-    try {
-        currentAssignUserId = userId;
-        courseAssignmentCounter = 0;
-        
-        // Load user data
-        const userData = await fetchData(`?ajax=1&action=get_user&id=${userId}`);
-        if (userData.error) {
-            throw new Error(userData.error);
-        }
-        
-        // Set user info
-        document.getElementById('userCourseInfo').innerHTML = `
-            <div class="info-header">
-                <div class="info-title">👤 ${userData.name}</div>
-                <div class="info-subtitle">📧 ${userData.email}</div>
-            </div>
-        `;
-        
-        // Get current course assignments
-        const coursesData = await fetchData(`?ajax=1&action=get_user_courses&id=${userId}`);
-        if (coursesData.success) {
-            // Clear assignments
-            document.getElementById('courseAssignments').innerHTML = '';
+    currentAssignUserId = userId;
+    courseAssignmentCounter = 0;
+    
+    // Load user data first
+    fetchData('?ajax=1&action=get_user&id=' + userId)
+        .then(function(userData) {
+            if (userData.error) {
+                throw new Error(userData.error);
+            }
             
-            // Add existing assignments
-            coursesData.courses.forEach(course => {
-                addCourseAssignment(course);
-            });
+            // Set user info
+            document.getElementById('userCourseInfo').innerHTML = 
+                '<div class="info-header">' +
+                '<div class="info-title">👤 ' + userData.name + '</div>' +
+                '<div class="info-subtitle">📧 ' + userData.email + '</div>' +
+                '</div>';
             
-            // Show modal
-            openModal('courseAssignmentModal');
-            showNotification('Cursusgegevens geladen!', 'success');
-        } else {
-            throw new Error(coursesData.message || 'Fout bij laden cursusgegevens');
-        }
-    } catch (error) {
-        console.error('Error loading course assignments:', error);
-        showNotification('Fout bij laden: ' + error.message, 'error');
-    }
-}
+            // Get current course assignments
+            return fetchData('?ajax=1&action=get_user_courses&id=' + userId);
+        })
+        .then(function(coursesData) {
+            if (coursesData.success) {
+                // Clear assignments
+                document.getElementById('courseAssignments').innerHTML = '';
+                
+                // Add existing assignments
+                coursesData.courses.forEach(function(course) {
+                    addCourseAssignment(course);
+                });
+                
+                // Show modal
+                openModal('courseAssignmentModal');
+                showNotification('Cursusgegevens geladen!', 'success');
+            } else {
+                throw new Error(coursesData.message || 'Fout bij laden cursusgegevens');
+            }
+        })
+        .catch(function(error) {
+            console.error('Error loading course assignments:', error);
+            showNotification('Fout bij laden: ' + error.message, 'error');
+        });
+};
 
-function addCourseAssignment(existingCourse = null) {
+window.addCourseAssignment = function(existingCourse) {
     console.log('➕ Adding course assignment:', existingCourse);
-    const id = ++courseAssignmentCounter;
-    const container = document.getElementById('courseAssignments');
+    var id = ++courseAssignmentCounter;
+    var container = document.getElementById('courseAssignments');
     
-    const assignmentDiv = document.createElement('div');
+    var assignmentDiv = document.createElement('div');
     assignmentDiv.className = 'form-group';
-    assignmentDiv.id = `assignment-${id}`;
+    assignmentDiv.id = 'assignment-' + id;
     
-    let courseOptions = '<option value="">-- Selecteer Cursus --</option>';
-    allCoursesData.forEach(course => {
-        const selected = existingCourse && existingCourse.course_id == course.id ? 'selected' : '';
-        const courseInfo = `${course.name} (${new Date(course.course_date).toLocaleDateString('nl-NL')})`;
-        courseOptions += `<option value="${course.id}" ${selected}>${courseInfo}</option>`;
+    var courseOptions = '<option value="">-- Selecteer Cursus --</option>';
+    allCoursesData.forEach(function(course) {
+        var selected = existingCourse && existingCourse.course_id == course.id ? 'selected' : '';
+        var courseInfo = course.name + ' (' + new Date(course.course_date).toLocaleDateString('nl-NL') + ')';
+        courseOptions += '<option value="' + course.id + '" ' + selected + '>' + courseInfo + '</option>';
     });
     
-    const paymentStatus = existingCourse ? existingCourse.payment_status : 'pending';
+    var paymentStatus = existingCourse ? existingCourse.payment_status : 'pending';
     
-    assignmentDiv.innerHTML = `
-        <div class="assignment-header">
-            <label>Cursus Toekenning #${id}</label>
-            <button type="button" onclick="removeCourseAssignment(${id})" class="btn btn-sm btn-danger">
-                <i class="fas fa-trash"></i>
-            </button>
-        </div>
-        
-        <div class="form-grid">
-            <div class="form-group">
-                <select name="course_id" required>
-                    ${courseOptions}
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <select name="payment_status">
-                    <option value="pending" ${paymentStatus === 'pending' ? 'selected' : ''}>⏳ Wachtend</option>
-                    <option value="paid" ${paymentStatus === 'paid' ? 'selected' : ''}>✅ Betaald</option>
-                    <option value="cancelled" ${paymentStatus === 'cancelled' ? 'selected' : ''}>❌ Geannuleerd</option>
-                </select>
-            </div>
-        </div>
-        
-        <div class="form-group">
-            <input type="text" name="notes" placeholder="Eventuele opmerkingen..." 
-                   value="${existingCourse ? (existingCourse.notes || '') : ''}">
-        </div>
-    `;
+    assignmentDiv.innerHTML = 
+        '<div class="assignment-header">' +
+        '<label>Cursus Toekenning #' + id + '</label>' +
+        '<button type="button" onclick="removeCourseAssignment(' + id + ')" class="btn btn-sm btn-danger">' +
+        '<i class="fas fa-trash"></i>' +
+        '</button>' +
+        '</div>' +
+        '<div class="form-grid">' +
+        '<div class="form-group">' +
+        '<select name="course_id" required>' + courseOptions + '</select>' +
+        '</div>' +
+        '<div class="form-group">' +
+        '<select name="payment_status">' +
+        '<option value="pending"' + (paymentStatus === 'pending' ? ' selected' : '') + '>⏳ Wachtend</option>' +
+        '<option value="paid"' + (paymentStatus === 'paid' ? ' selected' : '') + '>✅ Betaald</option>' +
+        '<option value="cancelled"' + (paymentStatus === 'cancelled' ? ' selected' : '') + '>❌ Geannuleerd</option>' +
+        '</select>' +
+        '</div>' +
+        '</div>' +
+        '<div class="form-group">' +
+        '<input type="text" name="notes" placeholder="Eventuele opmerkingen..." value="' + (existingCourse ? (existingCourse.notes || '') : '') + '">' +
+        '</div>';
     
     container.appendChild(assignmentDiv);
-}
+};
 
-function removeCourseAssignment(id) {
+window.removeCourseAssignment = function(id) {
     console.log('➖ Removing course assignment:', id);
-    const element = document.getElementById(`assignment-${id}`);
+    var element = document.getElementById('assignment-' + id);
     if (element) {
         element.remove();
     }
-}
+};
 
-async function saveCourseAssignments() {
+window.saveCourseAssignments = function() {
     console.log('💾 Saving course assignments...');
-    const assignments = [];
-    const container = document.getElementById('courseAssignments');
-    const assignmentDivs = container.querySelectorAll('[id^="assignment-"]');
+    var assignments = [];
+    var container = document.getElementById('courseAssignments');
+    var assignmentDivs = container.querySelectorAll('[id^="assignment-"]');
     
-    assignmentDivs.forEach(div => {
-        const courseId = div.querySelector('select[name="course_id"]').value;
-        const paymentStatus = div.querySelector('select[name="payment_status"]').value;
-        const notes = div.querySelector('input[name="notes"]').value;
+    assignmentDivs.forEach(function(div) {
+        var courseId = div.querySelector('select[name="course_id"]').value;
+        var paymentStatus = div.querySelector('select[name="payment_status"]').value;
+        var notes = div.querySelector('input[name="notes"]').value;
         
         if (courseId) {
             assignments.push({
@@ -1182,85 +1093,41 @@ async function saveCourseAssignments() {
         }
     });
     
-    const form = document.createElement('form');
+    var form = document.createElement('form');
     form.method = 'POST';
-    form.innerHTML = `
-        <input type="hidden" name="action" value="assign_courses">
-        <input type="hidden" name="user_id" value="${currentAssignUserId}">
-        <input type="hidden" name="courses" value='${JSON.stringify(assignments)}'>
-    `;
+    form.innerHTML = 
+        '<input type="hidden" name="action" value="assign_courses">' +
+        '<input type="hidden" name="user_id" value="' + currentAssignUserId + '">' +
+        '<input type="hidden" name="courses" value=\'' + JSON.stringify(assignments) + '\'>';
     document.body.appendChild(form);
     form.submit();
-}
+};
 
-function showBulkImportModal() {
+window.showBulkImportModal = function() {
     console.log('📋 Bulk import modal called');
-    showNotification('📋 Bulk import functionaliteit komt binnenkort! Deze feature zal CSV import ondersteunen voor grote aantallen gebruikers.', 'info');
-}
+    showNotification('📋 Bulk import functionaliteit komt binnenkort!', 'info');
+};
 
-function viewUserDetails(userId) {
-    console.log('👁️ View user details:', userId);
-    editUser(userId);
-    showNotification('Gebruiker details geladen in bewerk modus', 'info');
-}
-
-function reactivateUser(userId) {
-    console.log('▶️ Reactivate user:', userId);
-    if (!confirm('Weet je zeker dat je deze gebruiker wilt reactiveren?')) {
-        return;
-    }
-    
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.innerHTML = `
-        <input type="hidden" name="action" value="update_user">
-        <input type="hidden" name="user_id" value="${userId}">
-        <input type="hidden" name="active" value="1">
-        <input type="hidden" name="quick_update" value="1">
-    `;
-    document.body.appendChild(form);
-    form.submit();
-}
-
-function testAjax() {
+window.testAjax = function() {
     console.log('🧪 Testing AJAX connection...');
     fetchData('?ajax=1&action=test')
-        .then(response => {
+        .then(function(response) {
             if (response.status === 'success') {
                 console.log('✅ AJAX connection working:', response.message);
                 showNotification('AJAX connection working!', 'success');
             }
         })
-        .catch(error => {
+        .catch(function(error) {
             console.error('❌ AJAX test failed:', error);
             showNotification('AJAX test failed: ' + error.message, 'error');
         });
-}
+};
 
-// ============================================
-// INITIALIZATION
-// ============================================
-
-function initializeUsersPage() {
-    console.log('🎬 Initializing users page...');
-    
-    // Generate CRUD functions
-    generateEditFunction('user');
-    generateResetFunction('user');
-    
-    // Test AJAX connection
-    testAjax();
-    
-    console.log('✅ Users page initialized successfully');
-}
-
-// ============================================
-// EVENT LISTENERS
-// ============================================
-
+// Event listeners
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('📄 DOM Content Loaded - starting initialization...');
-    initializeUsersPage();
+    console.log('📄 DOM Content Loaded');
+    testAjax();
+    console.log('✅ Simple user management JavaScript loaded');
 });
 
 // Close modal when clicking outside
@@ -1268,21 +1135,19 @@ window.onclick = function(event) {
     if (event.target.classList.contains('modal')) {
         event.target.style.display = 'none';
     }
-}
+};
 
 // Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
-    // Escape to close modals
     if (e.key === 'Escape') {
-        const modals = document.querySelectorAll('.modal');
-        modals.forEach(modal => {
+        var modals = document.querySelectorAll('.modal');
+        modals.forEach(function(modal) {
             if (modal.style.display === 'block') {
                 modal.style.display = 'none';
             }
         });
     }
     
-    // Ctrl+N for new user
     if (e.ctrlKey && e.key === 'n') {
         e.preventDefault();
         openModal('userModal');
@@ -1290,19 +1155,21 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// Debug: Log all function definitions
-setTimeout(() => {
-    console.log('🔧 User management functions loaded:');
-    console.log('- openModal:', typeof openModal);
-    console.log('- closeModal:', typeof closeModal);
-    console.log('- editUser:', typeof editUser);
-    console.log('- deleteUser:', typeof deleteUser);
-    console.log('- assignCourses:', typeof assignCourses);
-    console.log('- resetUserForm:', typeof resetUserForm);
-    console.log('- applyFilters:', typeof applyFilters);
-    console.log('- showBulkImportModal:', typeof showBulkImportModal);
-    console.log('✅ All functions should be available now!');
-}, 100);
+// Debug check
+setTimeout(function() {
+    console.log('🔧 Function check:');
+    console.log('- openModal:', typeof window.openModal);
+    console.log('- editUser:', typeof window.editUser);
+    console.log('- deleteUser:', typeof window.deleteUser);
+    console.log('- assignCourses:', typeof window.assignCourses);
+    console.log('- showBulkImportModal:', typeof window.showBulkImportModal);
+    
+    if (typeof window.openModal === 'function') {
+        console.log('✅ All functions loaded successfully!');
+    } else {
+        console.error('❌ Functions still not loaded');
+    }
+}, 500);
 </script>
 </script>
 
