@@ -1,6 +1,6 @@
 <?php
 /**
- * Cursus Beheer - Unified System FIXED v6.4.2
+ * Cursus Beheer - Unified System FIXED v6.4.3
  * Fixed version met echte database functies
  * Converted from original courses.php to unified system
  * Updated: 2025-06-13
@@ -13,6 +13,8 @@
  * v6.4.2 - FIXED: Added working editTemplate() and editCourse() functions
  * v6.4.2 - FIXED: Added modal helper functions (openModal, closeModal)
  * v6.4.2 - FIXED: Improved fillTemplateData with better UX
+ * v6.4.3 - FIXED: Better AJAX error handling and URL construction
+ * v6.4.3 - FIXED: Improved JSON parsing with fallback error messages
  */
 
 session_start();
@@ -47,27 +49,43 @@ try {
 if (isset($_GET['ajax']) && isset($_GET['action'])) {
     header('Content-Type: application/json');
     
-    switch ($_GET['action']) {
-        case 'get_template':
-            if (isset($_GET['id']) && is_numeric($_GET['id'])) {
-                $template = getTemplateById($pdo, $_GET['id']);
-                echo json_encode($template ?: ['error' => 'Template niet gevonden']);
-            } else {
-                echo json_encode(['error' => 'Invalid ID']);
-            }
-            break;
-            
-        case 'get_course':
-            if (isset($_GET['id']) && is_numeric($_GET['id'])) {
-                $course = getCourseById($pdo, $_GET['id']);
-                echo json_encode($course ?: ['error' => 'Cursus niet gevonden']);
-            } else {
-                echo json_encode(['error' => 'Invalid ID']);
-            }
-            break;
-            
-        default:
-            echo json_encode(['error' => 'Unknown action']);
+    try {
+        switch ($_GET['action']) {
+            case 'get_template':
+                if (isset($_GET['id']) && is_numeric($_GET['id'])) {
+                    $template = getTemplateById($pdo, $_GET['id']);
+                    if ($template) {
+                        echo json_encode($template);
+                    } else {
+                        echo json_encode(['error' => 'Template niet gevonden']);
+                    }
+                } else {
+                    echo json_encode(['error' => 'Invalid ID parameter']);
+                }
+                break;
+                
+            case 'get_course':
+                if (isset($_GET['id']) && is_numeric($_GET['id'])) {
+                    $course = getCourseById($pdo, $_GET['id']);
+                    if ($course) {
+                        echo json_encode($course);
+                    } else {
+                        echo json_encode(['error' => 'Cursus niet gevonden']);
+                    }
+                } else {
+                    echo json_encode(['error' => 'Invalid ID parameter']);
+                }
+                break;
+                
+            case 'test':
+                echo json_encode(['status' => 'success', 'message' => 'AJAX connection working!']);
+                break;
+                
+            default:
+                echo json_encode(['error' => 'Unknown action: ' . $_GET['action']]);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
     }
     exit;
 }
@@ -1147,8 +1165,13 @@ function renderActionGroup($entity, $item, $preventDelete = false) {
 </div>
 
 <script>
+// Debug mode - set to true for extra logging
+const DEBUG_MODE = true;
+
 // Page-specific JavaScript
 document.addEventListener('DOMContentLoaded', function() {
+    if (DEBUG_MODE) console.log('Courses page loaded, initializing...');
+    
     // Initialize location description
     updateLocationDescription();
     
@@ -1180,9 +1203,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Template Edit Function
 window.editTemplate = async function(templateId) {
+    if (DEBUG_MODE) console.log('Editing template:', templateId);
+    
     try {
-        const response = await fetch(`?ajax=1&action=get_template&id=${templateId}`);
-        const template = await response.json();
+        const url = window.location.pathname + '?ajax=1&action=get_template&id=' + encodeURIComponent(templateId);
+        if (DEBUG_MODE) console.log('AJAX URL:', url);
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error('Network response was not ok: ' + response.status);
+        }
+        
+        const text = await response.text();
+        if (DEBUG_MODE) console.log('Raw response:', text);
+        
+        let template;
+        
+        try {
+            template = JSON.parse(text);
+        } catch (parseError) {
+            console.error('Response was not JSON:', text);
+            throw new Error('Server returned invalid JSON. Check PHP errors.');
+        }
         
         if (template.error) {
             alert('❌ ' + template.error);
@@ -1205,6 +1248,8 @@ window.editTemplate = async function(templateId) {
         document.getElementById('booking_form_url').value = template.booking_form_url || '';
         document.getElementById('incompany_available').checked = template.incompany_available == 1;
         
+        if (DEBUG_MODE) console.log('Template data loaded successfully:', template);
+        
         // Update modal title and submit button
         document.getElementById('templateModalTitle').textContent = 'Template Bewerken';
         document.getElementById('templateSubmitText').textContent = 'Template Bijwerken';
@@ -1213,15 +1258,64 @@ window.editTemplate = async function(templateId) {
         openModal('templateModal');
         
     } catch (error) {
-        alert('❌ Fout bij ophalen template: ' + error.message);
+        console.error('AJAX Error Details:', {
+            templateId: templateId,
+            url: url,
+            error: error.message
+        });
+        alert('❌ Fout bij ophalen template: ' + error.message + '\n\nCheck de browser console voor meer details.');
+    }
+};
+
+// Test function - call testAjax() in browser console to check connection
+window.testAjax = async function() {
+    try {
+        const url = window.location.pathname + '?ajax=1&action=test';
+        console.log('Testing AJAX with URL:', url);
+        
+        const response = await fetch(url);
+        console.log('Response status:', response.status);
+        console.log('Response headers:', [...response.headers.entries()]);
+        
+        const text = await response.text();
+        console.log('Raw response text:', text);
+        
+        const result = JSON.parse(text);
+        console.log('Parsed JSON:', result);
+        
+        alert('AJAX test successful: ' + result.message);
+    } catch (error) {
+        console.error('AJAX test failed:', error);
+        alert('AJAX test failed: ' + error.message);
     }
 };
 
 // Course Edit Function
 window.editCourse = async function(courseId) {
+    if (DEBUG_MODE) console.log('Editing course:', courseId);
+    
     try {
-        const response = await fetch(`?ajax=1&action=get_course&id=${courseId}`);
-        const course = await response.json();
+        const url = window.location.pathname + '?ajax=1&action=get_course&id=' + encodeURIComponent(courseId);
+        if (DEBUG_MODE) console.log('AJAX URL:', url);
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error('Network response was not ok: ' + response.status);
+        }
+        
+        const text = await response.text();
+        if (DEBUG_MODE) console.log('Raw response:', text);
+        
+        let course;
+        
+        try {
+            course = JSON.parse(text);
+        } catch (parseError) {
+            console.error('Response was not JSON:', text);
+            console.error('Parse error:', parseError);
+            throw new Error('Server returned invalid JSON. Check PHP errors.');
+        }
         
         if (course.error) {
             alert('❌ ' + course.error);
@@ -1248,6 +1342,8 @@ window.editCourse = async function(courseId) {
         document.getElementById('price').value = course.price || 0;
         document.getElementById('course_incompany_available').checked = course.incompany_available == 1;
         
+        if (DEBUG_MODE) console.log('Course data loaded successfully:', course);
+        
         // Update modal title and submit button
         document.getElementById('courseModalTitle').textContent = 'Cursus Bewerken';
         document.getElementById('courseSubmitText').textContent = 'Cursus Bijwerken';
@@ -1259,7 +1355,12 @@ window.editCourse = async function(courseId) {
         openModal('courseModal');
         
     } catch (error) {
-        alert('❌ Fout bij ophalen cursus: ' + error.message);
+        console.error('AJAX Error Details:', {
+            courseId: courseId,
+            url: url,
+            error: error.message
+        });
+        alert('❌ Fout bij ophalen cursus: ' + error.message + '\n\nCheck de browser console voor meer details.');
     }
 };
 
