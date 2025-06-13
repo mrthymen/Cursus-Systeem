@@ -187,9 +187,10 @@ function getSimpleEmailContent($type, $data) {
     $email = htmlspecialchars($data['email']);
     $organisatie = htmlspecialchars($data['organisatie'] ?? '');
     
-    // Get full Inventijn branded HTML template
-    $inventijn_template = getInventijnEmailTemplate($naam, $training, $type, $course_data);
-    
+   // CORRECT - haal course_data uit data array:
+$course_data = $data['course_data'] ?? [];
+$inventijn_template = getInventijnEmailTemplate($naam, $training, $type, $course_data);
+
     $templates = [
         'enrollment' => [
             'subject' => "🎉 Je bent ingeschreven bij $training - Inventijn",
@@ -376,7 +377,13 @@ function getInventijnEmailTemplate($naam, $training, $type = 'interest', $course
 /**
  * Main Email Sending Function
  */
-function sendConfirmationEmail($type, $data, $result_id = null) {
+$data['course_data'] = $course_data;
+
+// Send confirmation email
+debugLog("MAIN: Calling sendConfirmationEmail with course_data...", "MAIN_EMAIL");
+$email_sent = sendConfirmationEmail($email_type, $data, $result);
+ 
+ function sendConfirmationEmail($type, $data, $result_id = null) {
     debugLog("EMAIL: sendConfirmationEmail called - Type: $type", "EMAIL_MAIN");
     
     try {
