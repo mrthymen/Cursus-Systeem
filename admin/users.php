@@ -71,6 +71,26 @@ if (isset($_GET['ajax']) && isset($_GET['action'])) {
                 }
                 break;
                 
+            case 'regenerate_access_key':
+                if (isset($_GET['user_id']) && is_numeric($_GET['user_id'])) {
+                    $newAccessKey = bin2hex(random_bytes(16));
+                    $stmt = $pdo->prepare("UPDATE users SET access_key = ? WHERE id = ?");
+                    $success = $stmt->execute([$newAccessKey, $_GET['user_id']]);
+                    
+                    if ($success) {
+                        echo json_encode([
+                            'success' => true, 
+                            'message' => 'Nieuwe toegangscode gegenereerd!',
+                            'access_key' => $newAccessKey
+                        ]);
+                    } else {
+                        echo json_encode(['error' => 'Fout bij genereren nieuwe code']);
+                    }
+                } else {
+                    echo json_encode(['error' => 'Invalid user ID parameter']);
+                }
+                break;
+                
             case 'test':
                 echo json_encode(['status' => 'success', 'message' => 'AJAX connection working!']);
                 break;
@@ -527,6 +547,22 @@ $stats = [
                     </label>
                 </div>
                 
+                <!-- Access Key Management (only visible when editing) -->
+                <div id="accessKeySection" style="display: none; background: var(--surface-hover); padding: var(--space-4); border-radius: var(--radius-sm); margin: var(--space-4) 0; border: 1px solid var(--border);">
+                    <div style="font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: var(--space-2); font-weight: 600;">
+                        <i class="fas fa-key"></i> Toegangscode Beheer
+                    </div>
+                    <div style="font-family: monospace; font-size: var(--font-size-sm); color: var(--text-primary); margin-bottom: var(--space-3); padding: var(--space-2); background: var(--surface); border-radius: var(--radius-sm); border: 1px solid var(--border);" id="current_access_key">
+                        <!-- Filled by JavaScript -->
+                    </div>
+                    <button type="button" class="btn btn-sm btn-warning" onclick="regenerateAccessKey()" style="margin-top: var(--space-2);">
+                        <i class="fas fa-sync-alt"></i> Nieuwe Code Genereren
+                    </button>
+                    <div style="font-size: var(--font-size-xs); color: var(--text-tertiary); margin-top: var(--space-2);">
+                        ⚠️ Let op: De oude toegangscode werkt dan niet meer
+                    </div>
+                </div>
+                
                 <div class="btn-group">
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-save"></i>
@@ -701,6 +737,9 @@ function resetUserForm() {
     document.getElementById('userId').value = '';
     document.getElementById('userModalTitle').textContent = 'Nieuwe Gebruiker';
     document.getElementById('userModalSubmitText').textContent = 'Gebruiker Aanmaken';
+    
+    // Hide access key section for new users
+    document.getElementById('accessKeySection').style.display = 'none';
 }
 
 // Edit user function
@@ -741,6 +780,21 @@ async function editUser(userId) {
         
         // Set active checkbox
         document.getElementById('active').checked = response.active == '1';
+        
+        // Show access key section and fill access key
+        document.getElementById('accessKeySection').style.display = 'block';
+        const accessKey = response.access_key || 'Geen toegangscode';
+        const formattedKey = accessKey.length > 10 ? accessKey.match(/.{1,8}/g).join('-') : accessKey;
+        document.getElementById('current_access_key').innerHTML = `
+            <div style="font-weight: 600; margin-bottom: var(--space-1);">Huidige Toegangscode:</div>
+            <div style="color: var(--primary); font-size: var(--font-size-lg);">${formattedKey}</div>
+            <div style="font-size: var(--font-size-xs); color: var(--text-tertiary); margin-top: var(--space-1);">
+                Aangemaakt: ${new Date(response.created_at || '').toLocaleDateString('nl-NL') || 'Onbekend'}
+            </div>
+        `;
+        
+        // Store current user ID for access key regeneration
+        currentEditUserId = userId;
         
         // Open modal
         safeOpenModal('userModal');
@@ -945,6 +999,49 @@ function safeConfirmDelete(itemName, callback) {
         if (confirm(`Weet je zeker dat je "${itemName}" wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.`)) {
             callback();
         }
+    }
+}
+
+// Regenerate access key function
+async function regenerateAccessKey() {
+    if (!currentEditUserId) {
+        safeShowNotification('Geen gebruiker geselecteerd', 'error');
+        return;
+    }
+    
+    if (!confirm('🔄 Weet je zeker dat je een nieuwe toegangscode wilt genereren?\n\nDe oude code werkt dan niet meer.')) {
+        return;
+    }
+    
+    try {
+        let result;
+        
+        if (typeof fetchData !== 'undefined') {
+            // Use unified system
+            result = await fetchData(`?ajax=1&action=regenerate_access_key&user_id=${currentEditUserId}`);
+        } else {
+            // Fallback fetch
+            const response = await fetch(`?ajax=1&action=regenerate_access_key&user_id=${currentEditUserId}`);
+            result = await response.json();
+        }
+        
+        if (result.success) {
+            // Format the access key nicely
+            const formattedKey = result.access_key.match(/.{1,8}/g).join('-');
+            document.getElementById('current_access_key').innerHTML = `
+                <div style="font-weight: 600; margin-bottom: var(--space-1);">Huidige Toegangscode:</div>
+                <div style="color: var(--primary); font-size: var(--font-size-lg);">${formattedKey}</div>
+                <div style="font-size: var(--font-size-xs); color: var(--text-tertiary); margin-top: var(--space-1);">
+                    Gegenereerd: ${new Date().toLocaleString('nl-NL')}
+                </div>
+            `;
+            safeShowNotification(result.message, 'success');
+        } else {
+            throw new Error(result.error || 'Onbekende fout');
+        }
+    } catch (error) {
+        console.error('Error regenerating access key:', error);
+        safeShowNotification('Fout bij genereren nieuwe code: ' + error.message, 'error');
     }
 }
 
