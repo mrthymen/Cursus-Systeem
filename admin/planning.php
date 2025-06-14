@@ -28,11 +28,37 @@ require_once 'admin_modals.php';
 $message = '';
 $error = '';
 
-// Handle AJAX and form actions
+// Handle AJAX requests - MUST be before any HTML output
+if (isset($_GET['ajax']) && isset($_GET['action'])) {
+    // Prevent any HTML output before JSON
+    ob_clean();
+    header('Content-Type: application/json');
+    
+    try {
+        switch ($_GET['action']) {
+            case 'test':
+                echo json_encode([
+                    'success' => true, 
+                    'message' => 'AJAX connection working!',
+                    'timestamp' => date('Y-m-d H:i:s')
+                ]);
+                break;
+                
+            default:
+                echo json_encode(['success' => false, 'message' => 'Unknown action: ' . $_GET['action']]);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Server error: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Handle POST AJAX requests  
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Handle AJAX requests
     if (isset($_POST['action']) && !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest') {
+        ob_clean();
         header('Content-Type: application/json');
         
         try {
@@ -40,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 case 'test_connection':
                     echo json_encode([
                         'success' => true, 
-                        'message' => 'Connection test successful',
+                        'message' => 'POST AJAX connection working!',
                         'timestamp' => date('Y-m-d H:i:s'),
                         'session_user' => $_SESSION['admin_user'] ?? 'Unknown'
                     ]);
@@ -431,8 +457,8 @@ function getUserDetailsForPlanning($pdo, $user_id) {
             <a href="courses.php" class="btn btn-success">
                 <i class="fas fa-plus"></i> New Course
             </a>
-            <button onclick="testConnection()" class="btn btn-outline btn-sm" title="Test AJAX Connection">
-                <i class="fas fa-wifi"></i> Test
+            <button onclick="testAjax()" class="btn btn-outline btn-sm" title="Test AJAX Connection">
+                <i class="fas fa-wifi"></i> Test AJAX
             </button>
         </div>
     </div>
@@ -743,27 +769,7 @@ let currentInterestId = null;
 
 // Initialize page-specific functionality
 document.addEventListener('DOMContentLoaded', function() {
-    // Check if unified admin functions are available
-    if (typeof showNotification !== 'function') {
-        // Fallback notification function
-        window.showNotification = function(message, type = 'info', duration = 3000) {
-            alert(type.toUpperCase() + ': ' + message);
-        };
-    }
-    
-    if (typeof setButtonLoading !== 'function') {
-        // Fallback button loading function
-        window.setButtonLoading = function(button, loading = true) {
-            if (loading) {
-                button.disabled = true;
-                button.dataset.originalText = button.innerHTML;
-                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-            } else {
-                button.disabled = false;
-                button.innerHTML = button.dataset.originalText || button.innerHTML;
-            }
-        };
-    }
+    console.log('🎯 Planning Dashboard v6.4.0 - Initializing...');
 
     // Bulk action enhancement
     const bulkActionSelect = document.querySelector('select[name="bulk_action"]');
@@ -794,8 +800,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Course option styling
     document.querySelectorAll('.course-option').forEach(option => {
         option.addEventListener('mouseenter', function() {
-            this.style.borderColor = 'var(--primary)';
-            this.style.background = '#faf5ff';
+            if (!this.classList.contains('selected')) {
+                this.style.borderColor = 'var(--primary)';
+                this.style.background = '#faf5ff';
+            }
         });
         
         option.addEventListener('mouseleave', function() {
@@ -806,7 +814,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    console.log('🎯 Planning Dashboard v6.4.0 - JavaScript initialized successfully');
+    console.log('✅ Planning Dashboard JavaScript initialized');
 });
 
 // Enhanced conversion function with unified notifications
